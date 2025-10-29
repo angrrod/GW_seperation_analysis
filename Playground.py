@@ -43,7 +43,7 @@ wg = bilby.gw.waveform_generator.WaveformGenerator(
     waveform_arguments=wfv_args
 )
 
-injct_params = dict(
+injct_params_wave_1 = dict(
     mass_1=36.0,
     mass_2=29.0,
     a_1=0.4,  #part of the spin of the black hole
@@ -61,9 +61,32 @@ injct_params = dict(
     dec=-1.2108,  #lattiude
 )
 
+injct_params_wave_2 = dict(
+    mass_1=34.0,
+    mass_2=40.0,
+    a_1=0.4,  #part of the spin of the black hole
+    a_2=0.9,
+    tilt_1=0.2, #part of the spin of the black hole
+    tilt_2=1.0,
+    phi_12=5.7,  #part of the spin of the black hole
+    phi_jl=0.3,
+    luminosity_distance=1000.0, #2000
+    theta_jn=0.4, #angle of angular momentum
+    psi=2.659,  #angle of polarization
+    phase=1.2,
+    geocent_time=4.5,
+    ra=1.75, #longituded
+    dec=-1.8,  #lattiude
+)
+
 ifo.inject_signal(
     waveform_generator=wg,
-    parameters=injct_params
+    parameters=injct_params_wave_1
+)
+
+ifo.inject_signal(
+    waveform_generator=wg,
+    parameters=injct_params_wave_2
 )
 
 td = ifo.strain_data.time_domain_strain          # numpy array (length = duration * fs)
