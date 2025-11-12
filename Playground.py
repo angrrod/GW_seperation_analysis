@@ -52,7 +52,7 @@ injct_params_wave_1 = dict(
     tilt_2=1.0,
     phi_12=1.7,  #part of the spin of the black hole
     phi_jl=0.3,
-    luminosity_distance=1000.0, #2000
+    luminosity_distance=100.0, #2000
     theta_jn=0.4, #angle of angular momentum
     psi=2.659,  #angle of polarization
     phase=1.3,
@@ -70,7 +70,7 @@ injct_params_wave_2 = dict(
     tilt_2=1.0,
     phi_12=5.7,  #part of the spin of the black hole
     phi_jl=0.3,
-    luminosity_distance=1000.0, #2000
+    luminosity_distance=100.0, #2000
     theta_jn=0.4, #angle of angular momentum
     psi=2.659,  #angle of polarization
     phase=1.2,
@@ -88,6 +88,8 @@ ifo.inject_signal(
     waveform_generator=wg,
     parameters=injct_params_wave_2
 )
+
+# priors = bilby.core.prior.PriorDict()
 
 td = ifo.strain_data.time_domain_strain          # numpy array (length = duration * fs)
 t0 = ifo.strain_data.start_time                  # GPS start time (float)
