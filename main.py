@@ -3,9 +3,10 @@ import numpy as np
 from bilby.gw.source import lal_binary_black_hole
 from gwpy.timeseries import TimeSeries
 import matplotlib.pyplot as plt
+from bilby.core.result import read_in_result
 
 ### this file consists of the main loop for the tests conscerning GW separation analysis ###
-def GetScenario(wfv_args,injct_params_waves,logger):
+def GetScenario(wfv_args,ASD_file_name,logger):
     """generates the waveform and interferrometer data structures
 
     Args:
@@ -20,7 +21,7 @@ def GetScenario(wfv_args,injct_params_waves,logger):
     ifo = bilby.gw.detector.get_empty_interferometer("L1") #change name?
     #load spectral density according to the file
     ifo.power_spectral_density = bilby.gw.detector.PowerSpectralDensity.from_power_spectral_density_file(
-        psd_file="ET_B_PSD.txt"
+        psd_file=ASD_file_name+"_PSD"+".txt"
     )
 
     #add gaussian noise
@@ -39,7 +40,7 @@ def GetScenario(wfv_args,injct_params_waves,logger):
     )
     return ifo, wg
 
-def InjectSignal(ifo, injct_params_waves,wg,sampling_frequency,logger):
+def InjectSignal(ifo, injct_params_waves,wg,logger):
     #add N waves
     logger.info("injecting " + str(len(injct_params_waves)) + " waves")
     for inject_params in injct_params_waves:
@@ -47,7 +48,10 @@ def InjectSignal(ifo, injct_params_waves,wg,sampling_frequency,logger):
             waveform_generator=wg,
             parameters=inject_params
         )
-    
+    return ifo
+
+def getDataTimeseries(ifo, sampling_frequency, logger):
+    logger.info("getting time series object")
     td = ifo.strain_data.time_domain_strain          # numpy array (length = duration * fs)
     t0 = ifo.strain_data.start_time                  # GPS start time (float)
     fs = sampling_frequency
@@ -77,74 +81,36 @@ def GetSingleLikelihood(priors,ifos,waveform_generator,logger):
     )
     return likelihood
 
-def PlotSignal(ts,logger):
-    #plot time domain of signal
-    logger.info("making plots")
-    fig1 = ts.plot()
-    ax = fig1.gca()
-    ax.set_title("ET1 strain: time domain")
-    ax.set_xlabel("Time [s]")
-    ax.set_ylabel("Strain")
-    fig1.savefig("Plots/strain_time_domain.png", dpi=300, bbox_inches="tight")
-    plt.close(fig1)
-
-    #plot ASD
-    asd = ts.asd(fftlength=4, method="median")  # choose fftlength to balance resolution vs variance
-    fig2 = asd.plot()
-    ax = fig2.gca()
-    ax.set_xlim(5, fs/2)       # match your likelihood band and Nyquist
-    ax.set_ylim(1e-25, 1e-20)  # tweak to taste
-    ax.set_title("ET1 strain: amplitude spectral density")
-    ax.set_xlabel("Frequency [Hz]")
-    ax.set_ylabel("ASD [1/√Hz]")
-    plt.close(fig2)
-    fig2.savefig("Plots/strain_asd.png", dpi=300, bbox_inches="tight")
-
-    #freq domain
-    H = ts.fft()                                # GWpy FrequencySeries (complex), ifft
-    f = H.frequencies.value                      # Hz
-    amp = np.abs(H.value) #absolute value of complex wave # |h(f)|
-
-    fig = plt.figure()
-    plt.loglog(f, amp)
-    plt.xlabel("Frequency [Hz]")
-    plt.ylabel(r"$|h(f)|$")
-    plt.title("One-sided amplitude spectrum (RFFT)")
-    fig.savefig("Plots/spectrum_rfft.png", dpi=300, bbox_inches="tight")
-    plt.close(fig)
-    
 def GeneratePosteriorSample(likelihood, priors,logger):
     logger.info("Generating posterior samples using nested sampeling dynesty")
-
     sample = bilby.run_sampler(
         likelihood=likelihood,
         priors=priors,
         sampler="dynesty",
-        nlive=500, 
-        dlogz=0.1, 
+        nlive=50, 
+        dlogz=2.0, #stopping criterion for the evidence
         sample="rwalk",  
-        walks=50,      
-        nact=10, 
+        walks=10, #steps for MCMC sampeler to select new candidates     
+        nact=3, #amount of steps is tuned so autocorr is small enough 
         resume=True,
         outdir="outdir_ET_dynesty",
         label="ET_BBH_example",
     )
-    sample.plot_corner()
     return sample
 
 def GetWaveFormParams(logger):
     logger.info("getting waveform parameters")
     injct_params_wave_1 = dict(
-        mass_1=36.0,
-        mass_2=29.0,
+        mass_1=12.0,
+        mass_2=18.0,
         a_1=0.4,  #part of the spin of the black hole
         a_2=0.3,
         tilt_1=0.5, #part of the spin of the black hole
         tilt_2=1.0,
         phi_12=1.7,  #part of the spin of the black hole
         phi_jl=0.3,
-        luminosity_distance=100.0, #2000
-        theta_jn=0.4, #angle of angular momentum
+        luminosity_distance=50000.0, #2000
+        theta_jn=1.4, #angle of angular momentum
         psi=2.659,  #angle of polarization
         phase=1.3,
         geocent_time=5,
@@ -152,16 +118,16 @@ def GetWaveFormParams(logger):
         dec=-1.2108,  #lattiude
     )
     injct_params_wave_2 = dict(
-        mass_1=34.0,
-        mass_2=40.0,
+        mass_1=21.0,
+        mass_2=10.0,
         a_1=0.4,  #part of the spin of the black hole
         a_2=0.9,
         tilt_1=0.2, #part of the spin of the black hole
         tilt_2=1.0,
         phi_12=5.7,  #part of the spin of the black hole
         phi_jl=0.3,
-        luminosity_distance=100.0, #2000
-        theta_jn=0.4, #angle of angular momentum
+        luminosity_distance=50000.0, #2000
+        theta_jn=1.5, #angle of angular momentum
         psi=2.659,  #angle of polarization
         phase=1.2,
         geocent_time=4.5,
@@ -177,7 +143,52 @@ def JPE():
 def HyrarchicalEstimation():
     pass
 
-def Main():
+### plots ###
+
+def PlotTimeSignal(ts,logger):
+    #plot time domain of signal
+    logger.info("making time domain plot")
+    fig1 = ts.plot()
+    ax = fig1.gca()
+    ax.set_title("ET1 strain: time domain")
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Strain")
+    fig1.savefig("Plots/strain_time_domain.png", dpi=300, bbox_inches="tight")
+    plt.close(fig1)
+    
+# def PlotASD(fs,ts,logger):
+#     logger.info("making ASD plot")
+#     #plot ASD
+#     asd = ts.asd(fftlength=4, method="median")  # choose fftlength to balance resolution vs variance
+#     fig2 = asd.plot()
+#     ax = fig2.gca()
+#     ax.set_xlim(5, fs/2)       # match your likelihood band and Nyquist
+#     ax.set_ylim(1e-25, 1e-20)  # tweak to taste
+#     ax.set_title("ET1 strain: amplitude spectral density")
+#     ax.set_xlabel("Frequency [Hz]")
+#     ax.set_ylabel("ASD [1/√Hz]")
+#     fig2.savefig("Plots/strain_asd.png", dpi=300, bbox_inches="tight")
+#     plt.close(fig2)
+
+def PlotQtrans(tc,ts,logger):
+    logger.info("making Qtransformed plot")
+    qspec = ts.q_transform(
+        qrange=(8, 8),
+        frange=(20, 512),
+        outseg=(tc - 4, tc + 4),  # time window around tc
+        whiten=True,              # default in many versions, but explicit is fine
+    )
+
+    # Let GWpy handle the plotting
+    fig = qspec.plot()
+    ax = fig.gca()
+    ax.set_yscale("log")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Frequency (Hz)")
+    ax.set_title("Q-transform of strain around first merger")
+    fig.savefig("Plots/qtransform.png", dpi=300, bbox_inches="tight")
+
+def Main(run_sampler):
     
     #Logger
     bilby.core.utils.setup_logger(
@@ -187,7 +198,6 @@ def Main():
     )
     logger = bilby.core.utils.logger
     logger.info("start_run")
-    
     
     wfv_args = dict(
         waveform_approximant="IMRPhenomPv2", #IMRPhenomPv2 
@@ -200,23 +210,37 @@ def Main():
     injct_params_waves = GetWaveFormParams(logger)
     
     #load realistic background and PSD
-    asd_f, asd = np.loadtxt("ET_B.txt", unpack=True)  
-    psd = asd**2
-    np.savetxt("ET_B_PSD.txt", np.column_stack([asd_f, psd]))
-    ifo, wg = GetScenario(wfv_args,injct_params_waves,logger)
+    ASD_file_name = "ET_C"
+    asd_f, asd = np.loadtxt(ASD_file_name+".txt", unpack=True)  
+    psd        = asd**2
+    np.savetxt(ASD_file_name+"_PSD"+".txt", np.column_stack([asd_f, psd]))
+    ifo, wg    = GetScenario(wfv_args,ASD_file_name,logger)
+    ifo        = InjectSignal(ifo, injct_params_waves,wg,logger)
+    ifos       = [ifo] #list of interferrometers
     
-    ts = InjectSignal(ifo, injct_params_waves,wg,wfv_args["sampling_frequency"],logger)
-
-    ifos = [ifo] #list of interferrometers
-    priors = GetPriors(logger)
+    # data plots
+    #corner plot already done
+    ts = getDataTimeseries(ifo,wfv_args["sampling_frequency"],logger)
+    PlotTimeSignal(ts, logger)
+    
+    tc = injct_params_waves[0]['geocent_time']
+    PlotQtrans(tc,ts,logger)
+    
+    # analysis
+    priors     = GetPriors(logger)
     likelihood = GetSingleLikelihood(priors,ifos,wg,logger)
-    GeneratePosteriorSample(likelihood, priors ,logger)
     
-    ts = InjectSignal(ifo, injct_params_waves,wg,wfv_args["sampling_frequency"],logger)
-    PlotSignal(ts, logger)
+    if run_sampler:
+        result = GeneratePosteriorSample(likelihood, priors ,logger)
+    else:
+        result = read_in_result("outdir_ET_dynesty/ET_BBH_example_result.json")
+    sample = result.posterior
+    
+    #make corner plot of the posterior samples
+    result.plot_corner()
 
 ###########################
 ###   Run actual Code   ###
 ###########################
 
-Main()
+Main(run_sampler = True)
