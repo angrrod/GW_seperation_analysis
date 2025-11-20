@@ -81,7 +81,7 @@ def GetSingleLikelihood(priors,ifos,waveform_generator,logger):
     )
     return likelihood
 
-def GeneratePosteriorSample(likelihood, priors,logger):
+def GeneratePosteriorSample(likelihood, priors, resume, logger):
     logger.info("Generating posterior samples using nested sampeling dynesty")
     sample = bilby.run_sampler(
         likelihood=likelihood,
@@ -92,7 +92,7 @@ def GeneratePosteriorSample(likelihood, priors,logger):
         sample="rwalk",  
         walks=10, #steps for MCMC sampeler to select new candidates     
         nact=3, #amount of steps is tuned so autocorr is small enough 
-        resume=True,
+        resume=resume,
         outdir="outdir_ET_dynesty",
         label="ET_BBH_example",
     )
@@ -101,15 +101,15 @@ def GeneratePosteriorSample(likelihood, priors,logger):
 def GetWaveFormParams(logger):
     logger.info("getting waveform parameters")
     injct_params_wave_1 = dict(
-        mass_1=12.0,
-        mass_2=18.0,
+        mass_1=22.0,
+        mass_2=20.0,
         a_1=0.4,  #part of the spin of the black hole
         a_2=0.3,
         tilt_1=0.5, #part of the spin of the black hole
         tilt_2=1.0,
         phi_12=1.7,  #part of the spin of the black hole
         phi_jl=0.3,
-        luminosity_distance=50000.0, #2000
+        luminosity_distance=1000.0, #2000
         theta_jn=1.4, #angle of angular momentum
         psi=2.659,  #angle of polarization
         phase=1.3,
@@ -118,15 +118,15 @@ def GetWaveFormParams(logger):
         dec=-1.2108,  #lattiude
     )
     injct_params_wave_2 = dict(
-        mass_1=21.0,
-        mass_2=10.0,
+        mass_1=25.0,
+        mass_2=20.0,
         a_1=0.4,  #part of the spin of the black hole
         a_2=0.9,
         tilt_1=0.2, #part of the spin of the black hole
         tilt_2=1.0,
         phi_12=5.7,  #part of the spin of the black hole
         phi_jl=0.3,
-        luminosity_distance=50000.0, #2000
+        luminosity_distance=1000.0, #2000
         theta_jn=1.5, #angle of angular momentum
         psi=2.659,  #angle of polarization
         phase=1.2,
@@ -145,10 +145,14 @@ def HyrarchicalEstimation():
 
 ### plots ###
 
-def PlotTimeSignal(ts,logger):
+def PlotTimeSignal(ts,tc,logger):
     #plot time domain of signal
     logger.info("making time domain plot")
-    fig1 = ts.plot()
+    
+    white = ts.whiten(4, 2).bandpass(40, 200)
+    white = ts
+    zoom = white.crop(tc - 0.6, tc + 0.6)
+    fig1 = zoom.plot()
     ax = fig1.gca()
     ax.set_title("ET1 strain: time domain")
     ax.set_xlabel("Time [s]")
@@ -175,8 +179,8 @@ def PlotQtrans(tc,ts,logger):
     qspec = ts.q_transform(
         qrange=(8, 8),
         frange=(20, 512),
-        outseg=(tc - 4, tc + 4),  # time window around tc
-        whiten=True,              # default in many versions, but explicit is fine
+        outseg=(tc - 4, tc + 4), 
+        whiten=True,              
     )
 
     # Let GWpy handle the plotting
@@ -189,7 +193,11 @@ def PlotQtrans(tc,ts,logger):
     fig.savefig("Plots/qtransform.png", dpi=300, bbox_inches="tight")
 
 def Main(run_sampler):
-    
+    """_summary_
+
+    Args:
+        run_sampler (bool): Describes if the sampler should be run from scratch, performing an entire sampeling run.
+    """
     #Logger
     bilby.core.utils.setup_logger(
         log_level="INFO",
@@ -210,7 +218,7 @@ def Main(run_sampler):
     injct_params_waves = GetWaveFormParams(logger)
     
     #load realistic background and PSD
-    ASD_file_name = "ET_C"
+    ASD_file_name = "ET_C"  #TODO: get ET_D config
     asd_f, asd = np.loadtxt(ASD_file_name+".txt", unpack=True)  
     psd        = asd**2
     np.savetxt(ASD_file_name+"_PSD"+".txt", np.column_stack([asd_f, psd]))
@@ -221,9 +229,9 @@ def Main(run_sampler):
     # data plots
     #corner plot already done
     ts = getDataTimeseries(ifo,wfv_args["sampling_frequency"],logger)
-    PlotTimeSignal(ts, logger)
-    
     tc = injct_params_waves[0]['geocent_time']
+    
+    PlotTimeSignal(ts,tc,logger)
     PlotQtrans(tc,ts,logger)
     
     # analysis
@@ -231,10 +239,11 @@ def Main(run_sampler):
     likelihood = GetSingleLikelihood(priors,ifos,wg,logger)
     
     if run_sampler:
-        result = GeneratePosteriorSample(likelihood, priors ,logger)
+        full_rerun = not run_sampler
+        result = GeneratePosteriorSample(likelihood, priors, full_rerun, logger)
     else:
         result = read_in_result("outdir_ET_dynesty/ET_BBH_example_result.json")
-    sample = result.posterior
+    sample = result.posterior #pandas data frame of samples
     
     #make corner plot of the posterior samples
     result.plot_corner()
