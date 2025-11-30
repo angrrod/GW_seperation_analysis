@@ -187,6 +187,7 @@ class GWScenario:
         return prior
     
     #needed for joint parameter estimation
+    # independent priors for both
     def getJointPriors(self):
         self.logger.info("$$$ getting joint priors")
         base = self.GetSinglePrior()   # BBHPriorDict
@@ -200,9 +201,16 @@ class GWScenario:
     
     def GetWaveFormParams(self):
         self.logger.info("$$$ getting waveform parameters")
+        
+        #convert masses to chirp and ratio
+        m1_1, m2_1 = 22.0, 20.0
+        m1_2, m2_2 = 25.0, 20.0
+        chirp_1, q_1 = masses_to_chirp_and_q(m1_1, m2_1)
+        chirp_2, q_2 = masses_to_chirp_and_q(m1_2, m2_2)
+        
         injct_params_wave_1 = dict(
-            mass_1=22.0,
-            mass_2=20.0,
+            chirp_mass=chirp_1,
+            mass_ratio=q_1,
             a_1=0.4,  #part of the spin of the black hole
             a_2=0.3,
             tilt_1=0.5, #part of the spin of the black hole
@@ -218,8 +226,8 @@ class GWScenario:
             dec=-1.2108,  #lattiude
         )
         injct_params_wave_2 = dict(
-            mass_1=25.0,
-            mass_2=20.0,
+            chirp_mass=chirp_2,
+            mass_ratio=q_2,
             a_1=0.4,  #part of the spin of the black hole
             a_2=0.9,
             tilt_1=0.2, #part of the spin of the black hole
@@ -358,7 +366,7 @@ class JointLikelihoodlMethod(Method):
         """
             wavform generator tailored for jointRB 
         """
-
+        self.logger.info("$$$ get relative binning waveform generator")
         wg_rb = bilby.gw.waveform_generator.WaveformGenerator(
             duration                      = self.scenario.wg.duration,
             sampling_frequency            = self.scenario.wg.sampling_frequency,
@@ -371,11 +379,12 @@ class HyrarchicalMethod(Method):
     def __init__(self,run_sampler:bool,scenario:GWScenario,logger):
         super().__init__(run_sampler, scenario, logger, )
         self.method_type     = Method_type.HIERARCHICAL
-        # self.singleSampler   = SingleSignalMethod(run_sampler, scenario, logger)
+        self.singleSampler   = SingleSignalMethod(run_sampler, scenario, logger)
         self.second_wave_ifo = self.scenario.ifo
         
     def generateSamples(self):
-        posteriorSampleA     = self.generateSamples()
+        self.logger.info("$$$ generate Samples for hyrarchical model")
+        posteriorSampleA     = self.singleSampler.generateSamples()
         MLPosteriorA         = getMaximumLikelihood(posteriorSampleA)
         pols                 = self.scenario.wg.frequency_domain_strain(MLPosteriorA) #returns cross and plus waveform
         h_fd                 = self.scenario.ifo.get_detector_response(pols, MLPosteriorA)
@@ -400,6 +409,7 @@ class HyrarchicalMethod(Method):
         return likelihood
 
     def _GetIfoResidual(self,res_fd):
+        self.logger.info("$$$ get residual interferrometer")
         #build copy for second interferrometer
         new_ifo = get_empty_interferometer(self.scenario.ifo.name)
         new_ifo.set_strain_data_from_frequency_domain_strain(
@@ -413,7 +423,7 @@ class HyrarchicalMethod(Method):
 
 class Method_type(Enum):
     # SINGLE       = ("single_likl", SingleSignalMethod)
-    JOINT        = ("joint_likl", JointLikelihoodlMethod)
+    # JOINT        = ("joint_likl", JointLikelihoodlMethod)
     HIERARCHICAL = ("hierarchical",HyrarchicalMethod)  
     
     def __init__(self, code, method: Method):
@@ -429,7 +439,14 @@ def getMaximumLikelihood(posterior):
     ml_sample = posterior.loc[idx_ml]
     return {k: ml_sample[k] for k in posterior.search_parameter_keys} #format for waveform generator
     
-
+def masses_to_chirp_and_q(m1, m2):
+    # Ensure m1 >= m2 so that q = m2/m1 <= 1, as in bilby
+    if m1 < m2:
+        m1, m2 = m2, m1
+    q = m2 / m1                       # mass_ratio in (0, 1]
+    # chirp mass in solar masses
+    chirp = (m1 * m2) ** (3.0 / 5.0) / (m1 + m2) ** (1.0 / 5.0)
+    return chirp, q
 
 ###########################
 ####     Main Loop     ####
