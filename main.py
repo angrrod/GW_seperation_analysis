@@ -449,7 +449,7 @@ class Method_type(Enum):
     def __init__(self, code, method: Method):
         self.code   = code
         self.method = method
-%TODO
+
 ### helper functions ###
 
 #TODO:refactor?
