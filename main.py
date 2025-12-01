@@ -26,7 +26,6 @@ class GWScenario:
     def __init__(self, logger ,config : WaveformConfig, injct_params_waves = None):
         self.logger             = logger
         self.config             = config
-        self._prior              = self.getJointPriors()
         if injct_params_waves is None:
             self.injct_params_waves = self.GetWaveFormParams()
             
@@ -36,9 +35,6 @@ class GWScenario:
         self.wg       = None
         
     
-    @property
-    #make the prior immutable
-    def prior(self): return self._prior
     
     def setUpScenario(self):
         """
@@ -174,30 +170,6 @@ class GWScenario:
         
         self._PlotTimeSignal(ts,tc,ts_noise,fileNames[0])
         self._PlotQtrans(tc,ts,fileNames[1])
-
-    def GetSinglePrior(self):
-        self.logger.info("$$$ getting a waveform prior")
-        prior = bilby.gw.prior.BBHPriorDict()  #allow for default ranges in ET
-        if "geocent_time" not in prior:
-            prior["geocent_time"] = bilby.core.prior.Uniform(
-                minimum=0.5,#maybe make this a bit bigger?
-                maximum=10,  
-                name="geocent_time",
-            )
-        return prior
-    
-    #needed for joint parameter estimation
-    # independent priors for both
-    def getJointPriors(self):
-        self.logger.info("$$$ getting joint priors")
-        base = self.GetSinglePrior()   # BBHPriorDict
-        priors = bilby.core.prior.PriorDict()
-
-        for key, prior in base.items():
-            priors[f"{key}_A"] = copy.deepcopy(prior)
-            priors[f"{key}_B"] = copy.deepcopy(prior)
-
-        return priors
     
     def GetWaveFormParams(self):
         self.logger.info("$$$ getting waveform parameters")
@@ -267,15 +239,15 @@ class Method(ABC):
         self.method_type = None
         
         #results
-        self.sample = None
+        self.posteriors = None
     
     def likelihood(self):
         self.logger.info("$$$ get a single likelihood signal")
-        prior = self.scenario.GetSinglePrior()
+        prior = self.getPrior()
         likelihood = bilby.gw.GravitationalWaveTransient(
             interferometers= [self.scenario.ifo],
             waveform_generator=self.scenario.wg,
-            priors=prior,
+            priors=self.getPrior(),
             distance_marginalization=False,
             phase_marginalization=False,
             time_marginalization=False,
@@ -287,10 +259,10 @@ class Method(ABC):
     def sampeler(self,resume):
         self.logger.info("$$$ Generating posterior samples using nested sampeling dynesty")
         
-        prior = self.scenario.prior
+        prior = self.getPrior()
         sample = bilby.run_sampler(
             likelihood=self.likelihood(),
-            priors=prior,
+            priors=self.getPrior(),
             sampler="dynesty",
             nlive=50, 
             dlogz=2.0, #stopping criterion for the evidence
@@ -312,7 +284,37 @@ class Method(ABC):
         else:
             outdir = "outdir_ET_dynesty_" + self.method_type.code + "/" + self.method_type.code + "_result.json"
             result = read_in_result(outdir) #outdir is also used in sampeler 
-        self.posterior_sample = result.posterior #pandas data frame of samples
+        self.posteriors = {"waveFormA" : result} #pandas data frame of samples
+        
+    ###   priors   ###
+        
+    def GetSinglePrior(self):
+        self.logger.info("$$$ getting a waveform prior")
+        prior = bilby.gw.prior.BBHPriorDict()  #allow for default ranges in ET
+        if "geocent_time" not in prior:
+            prior["geocent_time"] = bilby.core.prior.Uniform(
+                minimum=0.5,#maybe make this a bit bigger?
+                maximum=10,  
+                name="geocent_time",
+            )
+        return prior
+    
+    #needed for joint parameter estimation
+    # independent priors for both
+    def getJointPriors(self):
+        self.logger.info("$$$ getting joint priors")
+        base = self.GetSinglePrior()   # BBHPriorDict
+        priors = bilby.core.prior.PriorDict()
+
+        for key, prior in base.items():
+            priors[f"{key}_A"] = copy.deepcopy(prior)
+            priors[f"{key}_B"] = copy.deepcopy(prior)
+
+        return priors
+    
+    @abstractmethod
+    def getPrior(self):
+        pass
     
 class SingleSignalMethod(Method):
     def __init__(self, run_sampler:bool,scenario:GWScenario,logger):
@@ -322,7 +324,7 @@ class SingleSignalMethod(Method):
     def sampeler(self,resume):
         #adapt the prior
         self.logger.info("$$$ Generating posterior samples using nested sampeling dynesty for single signal")
-        prior = self.scenario.GetSinglePrior()
+        prior = self.GetSinglePrior()
         sample = bilby.run_sampler(
             likelihood=self.likelihood(),
             priors=prior,
@@ -337,6 +339,9 @@ class SingleSignalMethod(Method):
             label=self.method_type.code,
         )
         return sample
+    
+    def getPrior(self):
+        return self.GetSinglePrior()
 
 class JointLikelihoodlMethod(Method):
     def __init__(self,run_sampler:bool,scenario:GWScenario,logger):
@@ -355,7 +360,7 @@ class JointLikelihoodlMethod(Method):
             waveform_generator = wg_rb,
             ref_injection      = ref_injection, # actual parameters in simulation, ML for actual data, this is the FUDICIAL waveform used in the RB scheme
             N_overlaps         = 2,
-            priors             = self.scenario.prior,
+            priors             = self.getPrior(),
             reference_frame    = "sky",
             time_reference     = "geocenter",
             delta              = 0.03,  # RB binning tolerance
@@ -375,6 +380,9 @@ class JointLikelihoodlMethod(Method):
         )
         return wg_rb
     
+    def getPrior(self):
+        return self.getJointPriors()
+    
 class HyrarchicalMethod(Method):
     def __init__(self,run_sampler:bool,scenario:GWScenario,logger):
         super().__init__(run_sampler, scenario, logger, )
@@ -384,7 +392,8 @@ class HyrarchicalMethod(Method):
         
     def generateSamples(self):
         self.logger.info("$$$ generate Samples for hyrarchical model")
-        posteriorSampleA     = self.singleSampler.generateSamples()
+        self.singleSampler.generateSamples()
+        posteriorSampleA     = self.singleSampler.posteriors['waveFormA']
         MLPosteriorA         = getMaximumLikelihood(posteriorSampleA)
         pols                 = self.scenario.wg.frequency_domain_strain(MLPosteriorA) #returns cross and plus waveform
         h_fd                 = self.scenario.ifo.get_detector_response(pols, MLPosteriorA)
@@ -392,9 +401,16 @@ class HyrarchicalMethod(Method):
         res_fd               = d_fd - h_fd
         second_wave_ifo      = self._GetIfoResidual(res_fd)
         self.second_wave_ifo = second_wave_ifo
+        super().generateSamples()
+        posteriorSampleB     = self.singleSampler.posteriors['waveFormA']
+        self.posteriors = {
+            "waveFormA" : posteriorSampleA,
+            "waveFormB" : posteriorSampleB
+        }
+        
         
     def likelihood(self):
-        self.logger.info("$$$ get likelihood signal for custom ifo")
+        self.logger.info("$$$ get likelihood sgnal for custom ifo")
         prior = self.scenario.GetSinglePrior()
         likelihood = bilby.gw.GravitationalWaveTransient(
             interferometers          = [self.second_wave_ifo],
@@ -420,10 +436,14 @@ class HyrarchicalMethod(Method):
         )
         new_ifo.power_spectral_density = self.scenario.ifo.power_spectral_density
         return new_ifo
+    
+    def getPrior(self):
+        return self.GetSinglePrior()
+    
 
 class Method_type(Enum):
-    # SINGLE       = ("single_likl", SingleSignalMethod)
-    # JOINT        = ("joint_likl", JointLikelihoodlMethod)
+    SINGLE       = ("single_likl", SingleSignalMethod)
+    JOINT        = ("joint_likl", JointLikelihoodlMethod)
     HIERARCHICAL = ("hierarchical",HyrarchicalMethod)  
     
     def __init__(self, code, method: Method):
@@ -434,10 +454,11 @@ class Method_type(Enum):
 
 #TODO:refactor?
 #TODO: different center parameter
-def getMaximumLikelihood(posterior):
-    idx_ml = posterior["log_likelihood"].idxmax()
+def getMaximumLikelihood(result):
+    posterior = result.posterior
+    idx_ml    = posterior["log_likelihood"].idxmax()
     ml_sample = posterior.loc[idx_ml]
-    return {k: ml_sample[k] for k in posterior.search_parameter_keys} #format for waveform generator
+    return {k: ml_sample[k] for k in result.search_parameter_keys} #format for waveform generator
     
 def masses_to_chirp_and_q(m1, m2):
     # Ensure m1 >= m2 so that q = m2/m1 <= 1, as in bilby
