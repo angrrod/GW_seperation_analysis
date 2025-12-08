@@ -22,7 +22,7 @@ class WaveformConfig:
     sampling_frequency: float  = 4096.0
     reference_frequency: float = 10.0
     duration: float            = 10.0
-    ASD_file_name: str         = "ET_C" #TODO: get ET_D config
+    ASD_file_name: str         = "ET_D"
 
 class GWScenario:
     def __init__(self, logger ,config : WaveformConfig, injct_params_waves = None):
@@ -32,12 +32,10 @@ class GWScenario:
             self.injct_params_waves = self.GetWaveFormParams()
             
         #parameters to be initialized during set_up:
-        self.ifo      = None
+        self.ifos      = None
         self.noise_td = None #for plotting
         self.wg       = None
         
-    
-    
     def setUpScenario(self):
         """
         generates the waveform and interferrometer data structures
@@ -49,24 +47,32 @@ class GWScenario:
         asd_f, asd = np.loadtxt(self.config.ASD_file_name+".txt", unpack=True)  
         psd        = asd**2
         np.savetxt(self.config.ASD_file_name+"_PSD"+".txt", np.column_stack([asd_f, psd]))
-            
-        self.ifo = bilby.gw.detector.get_empty_interferometer("L1") # TODO: make einstein like
+        
+        et1       = bilby.gw.detector.get_empty_interferometer("ET1")
+        et2       = bilby.gw.detector.get_empty_interferometer("ET2")
+        et3       = bilby.gw.detector.get_empty_interferometer("ET3")
+        self.ifos = bilby.gw.detector.InterferometerList([et1, et2, et3])
         
         #load spectral density according to the file
-        self.ifo.power_spectral_density = bilby.gw.detector.PowerSpectralDensity.from_power_spectral_density_file(
-            psd_file=self.config.ASD_file_name+"_PSD"+".txt"
-        )
+        for ifo in self.ifos:
+            ifo.power_spectral_density = bilby.gw.detector.PowerSpectralDensity.from_power_spectral_density_file(
+                psd_file=self.config.ASD_file_name+"_PSD"+".txt"
+            )
 
         #add gaussian noise
-        self.ifo.set_strain_data_from_power_spectral_density(
+        self.ifos.set_strain_data_from_power_spectral_densities(
             sampling_frequency=self.config.sampling_frequency,
             duration=self.config.duration,
             start_time=0.0
         )
         
         #noise background used for plotting
-        self.noise_td = self.ifo.strain_data.time_domain_strain.copy()
-        
+        i = 0
+        self.noise_td = []
+        for ifo in self.ifos:
+            self.noise_td[i] = self.ifos[i].strain_data.time_domain_strain.copy()
+            i += 1
+            
         # BBH signal
         self.wg = bilby.gw.waveform_generator.WaveformGenerator(
             duration=self.config.duration,
@@ -78,12 +84,12 @@ class GWScenario:
         #inject N waves
         self.logger.info("$$$ injecting " + str(len(self.injct_params_waves)) + " waves")
         for inject_params in self.injct_params_waves:
-            self.ifo.inject_signal(
+            self.ifos.inject_signal(
                 waveform_generator=self.wg,
                 parameters=inject_params
             )
     
-    def _getDataTimeSeries(self):
+    def _getDataTimeSeries(self,strainI):
         """
         get timeseries objects of original noise and signal+noise for plotting 
         
@@ -94,8 +100,8 @@ class GWScenario:
             ts_noise: timeseries noise 
         """
         self.logger.info("$$$ getting time series objects")
-        td = self.ifo.strain_data.time_domain_strain          # numpy array (length = duration * fs)
-        t0 = self.ifo.strain_data.start_time                  # GPS start time (float)
+        td = self.ifos[strainI].strain_data.time_domain_strain          # numpy array (length = duration * fs)
+        t0 = self.ifos[strainI].strain_data.start_time                  # GPS start time (float)
         fs = self.config.sampling_frequency
 
         #convert data
@@ -167,7 +173,7 @@ class GWScenario:
         # data plots
         # corner plot already done
         self.logger.info("$$$ making plots")
-        ts, ts_noise = self._getDataTimeSeries()
+        ts, ts_noise = self._getDataTimeSeries(0)
         tc           = self.injct_params_waves[0]['geocent_time']
         
         self._PlotTimeSignal(ts,tc,ts_noise,fileNames[0])
@@ -177,8 +183,8 @@ class GWScenario:
         self.logger.info("$$$ getting waveform parameters")
         
         #convert masses to chirp and ratio
-        m1_1, m2_1 = 22.0, 20.0
-        m1_2, m2_2 = 25.0, 20.0
+        m1_1, m2_1 = 12.0, 10.0
+        m1_2, m2_2 = 15.0, 10.0
         chirp_1, q_1 = masses_to_chirp_and_q(m1_1, m2_1)
         chirp_2, q_2 = masses_to_chirp_and_q(m1_2, m2_2)
         
@@ -247,7 +253,7 @@ class Method(ABC):
         self.logger.info("$$$ get a single likelihood signal")
         prior = self.getPrior()
         likelihood = bilby.gw.GravitationalWaveTransient(
-            interferometers= [self.scenario.ifo],
+            interferometers= self.scenario.ifos,
             waveform_generator=self.scenario.wg,
             priors=self.getPrior(),
             distance_marginalization=False,
@@ -358,7 +364,7 @@ class JointLikelihoodlMethod(Method):
         
         wg_rb          = self._getRBWaveForm()
         likelihood     = OverlappingSignalsRelBinning(
-            interferometers    = [self.scenario.ifo],
+            interferometers    = self.scenario.ifo,
             waveform_generator = wg_rb,
             ref_injection      = ref_injection, # actual parameters in simulation, ML for actual data, this is the FUDICIAL waveform used in the RB scheme
             N_overlaps         = 2,
@@ -390,7 +396,7 @@ class HyrarchicalMethod(Method):
         super().__init__(run_sampler, scenario, logger, )
         self.method_type     = Method_type.HIERARCHICAL
         self.singleSampler   = SingleSignalMethod(run_sampler, scenario, logger)
-        self.second_wave_ifo = self.scenario.ifo
+        self.second_wave_ifos = self.scenario.ifos
         
     def generateSamples(self):
         self.logger.info("$$$ generate Samples for hyrarchical model")
@@ -398,11 +404,14 @@ class HyrarchicalMethod(Method):
         posteriorSampleA     = self.singleSampler.posteriors['waveFormA']
         MLPosteriorA         = getMaximumLikelihood(posteriorSampleA)
         pols                 = self.scenario.wg.frequency_domain_strain(MLPosteriorA) #returns cross and plus waveform
-        h_fd                 = self.scenario.ifo.get_detector_response(pols, MLPosteriorA)
-        d_fd                 = self.scenario.ifo.strain_data.frequency_domain_strain
-        res_fd               = d_fd - h_fd
-        second_wave_ifo      = self._GetIfoResidual(res_fd)
-        self.second_wave_ifo = second_wave_ifo
+        second_wave_ifos     = []
+        for ifo in self.scenario.ifos:
+            h_fd                 = ifo.get_detector_response(pols, MLPosteriorA)
+            d_fd                 = ifo.strain_data.frequency_domain_strain
+            res_fd               = d_fd - h_fd
+            second_wave_ifo      = self._GetIfoResidual(res_fd,ifo)
+            second_wave_ifos.append(second_wave_ifo)
+        self.second_wave_ifos = InterferometerList(second_wave_ifos)
         super().generateSamples()
         posteriorSampleB     = self.singleSampler.posteriors['waveFormA']
         self.posteriors = {
@@ -415,7 +424,7 @@ class HyrarchicalMethod(Method):
         self.logger.info("$$$ get likelihood sgnal for custom ifo")
         prior = self.scenario.GetSinglePrior()
         likelihood = bilby.gw.GravitationalWaveTransient(
-            interferometers          = [self.second_wave_ifo],
+            interferometers          = self.second_wave_ifos,
             waveform_generator       = self.scenario.wg,
             priors                   = prior,
             distance_marginalization = False,
@@ -426,17 +435,17 @@ class HyrarchicalMethod(Method):
         )
         return likelihood
 
-    def _GetIfoResidual(self,res_fd):
+    def _GetIfoResidual(self,res_fd,ifo):
         self.logger.info("$$$ get residual interferrometer")
         #build copy for second interferrometer
-        new_ifo = get_empty_interferometer(self.scenario.ifo.name)
+        new_ifo = get_empty_interferometer(ifo.name)
         new_ifo.set_strain_data_from_frequency_domain_strain(
             frequency_domain_strain = res_fd,
-            sampling_frequency      = self.scenario.ifo.strain_data.sampling_frequency,
-            duration                = self.scenario.ifo.strain_data.duration,
-            start_time              = self.scenario.ifo.strain_data.start_time,
+            sampling_frequency      = ifo.strain_data.sampling_frequency,
+            duration                = ifo.strain_data.duration,
+            start_time              = ifo.strain_data.start_time,
         )
-        new_ifo.power_spectral_density = self.scenario.ifo.power_spectral_density
+        new_ifo.power_spectral_density = ifo.power_spectral_density
         return new_ifo
     
     def getPrior(self):
@@ -502,10 +511,12 @@ def Main(run_sampler):
         method  = method_type.method(run_sampler,scenario,logger)
         
         start                                = time.process_time()
-        sample                               = method.generateSamples()
+        method.generateSamples()
         end                                  = time.process_time()
         runTime                              = end - start
         results[method_type.code]['runTime'] = runTime
+        sample                               = method.posteriors
+
         
         # analyze the samples
     
