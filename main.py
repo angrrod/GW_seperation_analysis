@@ -11,6 +11,8 @@ from enum import Enum
 from dataclasses import dataclass, asdict
 import copy
 from bilby.gw.conversion import convert_to_lal_binary_black_hole_parameters
+import time
+from collections import defaultdict
 
 ### this file consists of the main loop for the tests conscerning GW separation analysis ###
 @dataclass(frozen=True)
@@ -493,11 +495,18 @@ def Main(run_sampler):
     scenario.setUpScenario()
     scenario.makePlots(["strain_time_domain_set_up","qtransform_set_up"])
     
-    #TODO make loop for different methods
+    results = {method_type.code: {} for method_type in Method_type}
+    results = defaultdict(dict) #make dicts independent
     for method_type in Method_type:
         logger.info(f"$$$ Running method: {method_type.code}")
         method  = method_type.method(run_sampler,scenario,logger)
-        sample  = method.generateSamples()
+        
+        start                                = time.process_time()
+        sample                               = method.generateSamples()
+        end                                  = time.process_time()
+        runTime                              = end - start
+        results[method_type.code]['runTime'] = runTime
+        
         # analyze the samples
     
     #post processing
