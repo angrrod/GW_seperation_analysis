@@ -32,7 +32,7 @@ class GWScenario:
             self.injct_params_waves = self.GetWaveFormParams()
             
         #parameters to be initialized during set_up:
-        self.ifos      = None
+        self.ifos     = None
         self.noise_td = None #for plotting
         self.wg       = None
         
@@ -48,10 +48,10 @@ class GWScenario:
         psd        = asd**2
         np.savetxt(self.config.ASD_file_name+"_PSD"+".txt", np.column_stack([asd_f, psd]))
         
-        et1       = bilby.gw.detector.get_empty_interferometer("ET1")
-        et2       = bilby.gw.detector.get_empty_interferometer("ET2")
-        et3       = bilby.gw.detector.get_empty_interferometer("ET3")
-        self.ifos = bilby.gw.detector.InterferometerList([et1, et2, et3])
+        et1       = bilby.gw.detector.get_empty_interferometer("L1")
+        # et2       = bilby.gw.detector.get_empty_interferometer("ET2")
+        # et3       = bilby.gw.detector.get_empty_interferometer("ET3")
+        self.ifos = bilby.gw.detector.InterferometerList([et1]) #, et2, et3
         
         #load spectral density according to the file
         for ifo in self.ifos:
@@ -70,7 +70,7 @@ class GWScenario:
         i = 0
         self.noise_td = []
         for ifo in self.ifos:
-            self.noise_td[i] = self.ifos[i].strain_data.time_domain_strain.copy()
+            self.noise_td.append(self.ifos[i].strain_data.time_domain_strain.copy())
             i += 1
             
         # BBH signal
@@ -106,7 +106,7 @@ class GWScenario:
 
         #convert data
         ts       = TimeSeries(td, sample_rate=fs, epoch=t0)
-        ts_noise = TimeSeries(self.noise_td, dt=1/fs, epoch=t0)
+        ts_noise = TimeSeries(self.noise_td[strainI], dt=1/fs, epoch=t0)
         return ts, ts_noise
     
     ### plots ###
@@ -251,7 +251,6 @@ class Method(ABC):
     
     def likelihood(self):
         self.logger.info("$$$ get a single likelihood signal")
-        prior = self.getPrior()
         likelihood = bilby.gw.GravitationalWaveTransient(
             interferometers= self.scenario.ifos,
             waveform_generator=self.scenario.wg,
@@ -267,7 +266,6 @@ class Method(ABC):
     def sampeler(self,resume):
         self.logger.info("$$$ Generating posterior samples using nested sampeling dynesty")
         
-        prior = self.getPrior()
         sample = bilby.run_sampler(
             likelihood=self.likelihood(),
             priors=self.getPrior(),
@@ -364,7 +362,7 @@ class JointLikelihoodlMethod(Method):
         
         wg_rb          = self._getRBWaveForm()
         likelihood     = OverlappingSignalsRelBinning(
-            interferometers    = self.scenario.ifo,
+            interferometers    = self.scenario.ifos,
             waveform_generator = wg_rb,
             ref_injection      = ref_injection, # actual parameters in simulation, ML for actual data, this is the FUDICIAL waveform used in the RB scheme
             N_overlaps         = 2,
@@ -422,7 +420,7 @@ class HyrarchicalMethod(Method):
         
     def likelihood(self):
         self.logger.info("$$$ get likelihood sgnal for custom ifo")
-        prior = self.scenario.GetSinglePrior()
+        prior = self.GetSinglePrior()
         likelihood = bilby.gw.GravitationalWaveTransient(
             interferometers          = self.second_wave_ifos,
             waveform_generator       = self.scenario.wg,
