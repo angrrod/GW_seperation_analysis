@@ -214,4 +214,6 @@ __marimo__/
 priors.png
 outdir_ET_dynesty/
 temp.py
-External/jointRB
+External/*
+out/*
+!out/results.json

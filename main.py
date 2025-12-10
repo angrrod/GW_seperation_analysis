@@ -13,16 +13,30 @@ import copy
 from bilby.gw.conversion import convert_to_lal_binary_black_hole_parameters
 import time
 from collections import defaultdict
+import os
+import json
+import corner
+from bilby.core.result import plot_multiple
 
 ### this file consists of the main loop for the tests conscerning GW separation analysis ###
 @dataclass(frozen=True)
 class WaveformConfig:
     waveform_approximant: str  = "IMRPhenomPv2"
-    minimum_frequency: float   = 10.0
+    minimum_frequency: float   = 20.0 #10
     sampling_frequency: float  = 4096.0
-    reference_frequency: float = 10.0
-    duration: float            = 10.0
+    reference_frequency: float = 20.0 #10
+    duration: float            = 6.0
     ASD_file_name: str         = "ET_D"
+
+@dataclass(frozen=True)
+class MethodConfig:
+    sampler:str   = "dynesty"
+    nlive: float  = 20 
+    dlogz: float  = 2        #stopping criterion for the evidence
+    sample: float = "rwalk"  
+    walks: float  = 5         #steps for MCMC sampeler to select new candidates     
+    nact: float   = 3           #amount of steps is tuned so autocorr is small enough 
+    npool: float  = 12
 
 class GWScenario:
     def __init__(self, logger ,config : WaveformConfig, injct_params_waves = None):
@@ -155,7 +169,7 @@ class GWScenario:
         qspec = ts.q_transform(
             qrange=(8, 8),
             frange=(20, 512),
-            outseg=(timeCenter - 4, timeCenter + 4), 
+            outseg=(timeCenter - 3, timeCenter + 3), 
             whiten=True,              
         )
 
@@ -172,7 +186,6 @@ class GWScenario:
         self.logger.info("$$$ making plots")
         # data plots
         # corner plot already done
-        self.logger.info("$$$ making plots")
         ts, ts_noise = self._getDataTimeSeries(0)
         tc           = self.injct_params_waves[0]['geocent_time']
         
@@ -185,42 +198,42 @@ class GWScenario:
         #convert masses to chirp and ratio
         m1_1, m2_1 = 12.0, 10.0
         m1_2, m2_2 = 15.0, 10.0
-        chirp_1, q_1 = masses_to_chirp_and_q(m1_1, m2_1)
-        chirp_2, q_2 = masses_to_chirp_and_q(m1_2, m2_2)
+        chirp_1, q_1 = massesToChirpAndQ(m1_1, m2_1)
+        chirp_2, q_2 = massesToChirpAndQ(m1_2, m2_2)
         
         injct_params_wave_1 = dict(
             chirp_mass=chirp_1,
             mass_ratio=q_1,
-            a_1=0.4,  #part of the spin of the black hole
-            a_2=0.3,
+            a_1=0.6,  #part of the spin of the black hole
+            a_2=0.1,
             tilt_1=0.5, #part of the spin of the black hole
-            tilt_2=1.0,
-            phi_12=1.7,  #part of the spin of the black hole
-            phi_jl=0.3,
-            luminosity_distance=1000.0, #2000
-            theta_jn=1.4, #angle of angular momentum
+            tilt_2=2.3,
+            phi_12=2.2,  #part of the spin of the black hole
+            phi_jl=0.1,
+            luminosity_distance=2000.0, #2000
+            theta_jn=1.2, #angle of angular momentum
             psi=2.659,  #angle of polarization
-            phase=1.3,
-            geocent_time=5,
+            phase=1.9,
+            geocent_time=3,
             ra=1.375, #longituded
             dec=-1.2108,  #lattiude
         )
         injct_params_wave_2 = dict(
             chirp_mass=chirp_2,
             mass_ratio=q_2,
-            a_1=0.4,  #part of the spin of the black hole
+            a_1=0.2,  #part of the spin of the black hole
             a_2=0.9,
             tilt_1=0.2, #part of the spin of the black hole
-            tilt_2=1.0,
+            tilt_2=2.0,
             phi_12=5.7,  #part of the spin of the black hole
-            phi_jl=0.3,
-            luminosity_distance=1000.0, #2000
+            phi_jl=1.3,
+            luminosity_distance=2000.0, #2000
             theta_jn=1.5, #angle of angular momentum
             psi=2.659,  #angle of polarization
             phase=1.2,
-            geocent_time=4.5,
+            geocent_time=2.7,
             ra=1.75, #longituded
-            dec=-1.8,  #lattiude
+            dec=-2.8,  #lattiude
         )
         injct_params_waves = [injct_params_wave_1,injct_params_wave_2]
         return injct_params_waves
@@ -239,12 +252,13 @@ class GWScenario:
 
         return joint
 class Method(ABC):
-    def __init__(self,run_sampler:bool,scenario:GWScenario,logger):
+    def __init__(self,run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig):
 
         self.run_sampler = run_sampler
         self.scenario    = scenario
         self.logger      = logger
         self.method_type = None
+        self.config      = config
         
         #results
         self.posteriors = None
@@ -269,15 +283,17 @@ class Method(ABC):
         sample = bilby.run_sampler(
             likelihood=self.likelihood(),
             priors=self.getPrior(),
-            sampler="dynesty",
-            nlive=50, 
-            dlogz=2.0, #stopping criterion for the evidence
-            sample="rwalk",  
-            walks=10, #steps for MCMC sampeler to select new candidates     
-            nact=3, #amount of steps is tuned so autocorr is small enough 
+            sampler=self.config.sampler,
+            nlive=self.config.nlive, 
+            dlogz=self.config.dlogz, #stopping criterion for the evidence
+            sample=self.config.sample,  
+            walks=self.config.walks, #steps for MCMC sampeler to select new candidates     
+            nact=self.config.nact, #amount of steps is tuned so autocorr is small enough 
             resume=resume,
-            outdir="outdir_ET_dynesty_" + self.method_type.code,
+            outdir="out/outdir_ET_dynesty_" + self.method_type.code,
+            nested_mode="dynamic",
             label=self.method_type.code,
+            npool=self.config.npool,
         )
         return sample
     
@@ -288,12 +304,11 @@ class Method(ABC):
             full_rerun = not self.run_sampler
             result = self.sampeler(full_rerun)
         else:
-            outdir = "outdir_ET_dynesty_" + self.method_type.code + "/" + self.method_type.code + "_result.json"
+            outdir = "out/outdir_ET_dynesty_" + self.method_type.code + "/" + self.method_type.code + "_result.json"
             result = read_in_result(outdir) #outdir is also used in sampeler 
         self.posteriors = {"waveFormA" : result} #pandas data frame of samples
         
     ###   priors   ###
-        
     def GetSinglePrior(self):
         self.logger.info("$$$ getting a waveform prior")
         prior = bilby.gw.prior.BBHPriorDict()  #allow for default ranges in ET
@@ -323,9 +338,10 @@ class Method(ABC):
         pass
     
 class SingleSignalMethod(Method):
-    def __init__(self, run_sampler:bool,scenario:GWScenario,logger):
-        super().__init__( run_sampler, scenario, logger)
+    def __init__(self, run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig):
+        super().__init__( run_sampler, scenario, logger, config)
         self.method_type = Method_type.SINGLE
+        self.nameExtra = ""
     
     def sampeler(self,resume):
         #adapt the prior
@@ -334,15 +350,17 @@ class SingleSignalMethod(Method):
         sample = bilby.run_sampler(
             likelihood=self.likelihood(),
             priors=prior,
-            sampler="dynesty",
-            nlive=50, 
-            dlogz=2.0, #stopping criterion for the evidence
-            sample="rwalk",  
-            walks=10, #steps for MCMC sampeler to select new candidates     
-            nact=3, #amount of steps is tuned so autocorr is small enough 
+            sampler=self.config.sampler,
+            nlive=self.config.nlive, 
+            dlogz=self.config.dlogz, #stopping criterion for the evidence
+            sample=self.config.sample,  
+            walks=self.config.walks, #steps for MCMC sampeler to select new candidates     
+            nact=self.config.nact, #amount of steps is tuned so autocorr is small enough 
             resume=resume,
-            outdir="outdir_ET_dynesty_" + self.method_type.code,
+            outdir="out/outdir_ET_dynesty_" + self.method_type.code + self.nameExtra,
+            nested_mode="dynamic",
             label=self.method_type.code,
+            npool=self.config.npool,
         )
         return sample
     
@@ -350,8 +368,8 @@ class SingleSignalMethod(Method):
         return self.GetSinglePrior()
 
 class JointLikelihoodlMethod(Method):
-    def __init__(self,run_sampler:bool,scenario:GWScenario,logger):
-        super().__init__(run_sampler, scenario, logger)
+    def __init__(self,run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig):
+        super().__init__(run_sampler, scenario, logger, config)
         self.method_type = Method_type.JOINT
         
     def likelihood(self):
@@ -390,15 +408,18 @@ class JointLikelihoodlMethod(Method):
         return self.getJointPriors()
     
 class HyrarchicalMethod(Method):
-    def __init__(self,run_sampler:bool,scenario:GWScenario,logger):
-        super().__init__(run_sampler, scenario, logger, )
+    def __init__(self,run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig):
+        super().__init__(run_sampler, scenario, logger, config)
         self.method_type     = Method_type.HIERARCHICAL
-        self.singleSampler   = SingleSignalMethod(run_sampler, scenario, logger)
+        self.singleSampler   = SingleSignalMethod(True, scenario, logger,config) #run_sampler to true so that we always generate a new sample instead of using the one from the single method
+        self.singleSampler.nameExtra = "1" 
         self.second_wave_ifos = self.scenario.ifos
         
     def generateSamples(self):
         self.logger.info("$$$ generate Samples for hyrarchical model")
+        # 
         self.singleSampler.generateSamples()
+        
         posteriorSampleA     = self.singleSampler.posteriors['waveFormA']
         MLPosteriorA         = getMaximumLikelihood(posteriorSampleA)
         pols                 = self.scenario.wg.frequency_domain_strain(MLPosteriorA) #returns cross and plus waveform
@@ -469,7 +490,7 @@ def getMaximumLikelihood(result):
     ml_sample = posterior.loc[idx_ml]
     return {k: ml_sample[k] for k in result.search_parameter_keys} #format for waveform generator
     
-def masses_to_chirp_and_q(m1, m2):
+def massesToChirpAndQ(m1, m2):
     # Ensure m1 >= m2 so that q = m2/m1 <= 1, as in bilby
     if m1 < m2:
         m1, m2 = m2, m1
@@ -478,11 +499,63 @@ def masses_to_chirp_and_q(m1, m2):
     chirp = (m1 * m2) ** (3.0 / 5.0) / (m1 + m2) ** (1.0 / 5.0)
     return chirp, q
 
+def SaveResults(results, out_dir="out", filename="results.json"):
+    """Write a dictionary to a JSON file."""
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, filename)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2)
+    return path
+
+def plotOverlap(params,results):
+    params_A, params_B = addSuffixes(params)
+    fig                = None  #necessary for initialization
+    cmap               = plt.get_cmap("tab20")
+    colors             = list(cmap.colors)        # length 20
+    n_colors           = len(colors)
+    color_idx          = 0  
+    for method in results:
+        res = results[method]
+        for waveform in res:
+            wave = res[waveform]
+            color = colors[color_idx % n_colors]
+            color_idx += 1            #separate the joint poisterior that ends with _A and _B in their respective posterior samples
+            if method == Method_type.JOINT:
+                fig = createCornerPlot(wave.posterior[params_A].values,params,color,fig)
+                fig = createCornerPlot(wave.posterior[params_B].values,params,color,fig)
+            else:
+                # Single waveform
+                fig = createCornerPlot(wave.posterior[params].values,params,color,fig)
+
+    # Optionally adjust and show/save
+    fig.tight_layout()
+    fig.savefig("Plots/multiple waveforms.png", dpi=200)
+    
+def createCornerPlot(samps,params,color,fig,weights = None):
+    fig = corner.corner(
+        samps,
+        labels=params,          # base labels, no _A/_B
+        color=color,
+        # weights = weights,
+        plot_contours=True,
+        fill_contours=False,
+        hist_kwargs=dict(density=True),
+        fig=fig,                # None for first call; existing fig later
+    )
+    return fig
+
+def addSuffixes(strings):
+    suffixed_A = [s + "_A" for s in strings]
+    suffixed_B = [s + "_B" for s in strings]
+    return suffixed_A, suffixed_B
+
+
+
 ###########################
 ####     Main Loop     ####
 ###########################
 
-def Main(run_sampler):
+def Main(run_sampler,saveResults):
     """_summary_
     Args:
         run_sampler (bool): Describes if the sampler should be run from scratch, performing an entire sampeling run.
@@ -497,36 +570,48 @@ def Main(run_sampler):
     logger.info("$$$ start_run")
     
     #build scenario
-    config = WaveformConfig()
-    scenario = GWScenario(logger, config)
+    ScenarioConfig = WaveformConfig()
+    scenario = GWScenario(logger, ScenarioConfig)
     scenario.setUpScenario()
     scenario.makePlots(["strain_time_domain_set_up","qtransform_set_up"])
     
-    results = {method_type.code: {} for method_type in Method_type}
-    results = defaultdict(dict) #make dicts independent
+    #used for measuring overlap etc with the joint.
+    results       = {method_type.code: {} for method_type in Method_type}
+    results       = defaultdict(dict) #make dicts independent
+    
+    #used for plotting
+    samplesToPlot  = {method_type.code: {} for method_type in Method_type}
+    samplesToPlot  = defaultdict(dict)
+    MethodConf     = MethodConfig()
     for method_type in Method_type:
         logger.info(f"$$$ Running method: {method_type.code}")
-        method  = method_type.method(run_sampler,scenario,logger)
+        method  = method_type.method(run_sampler,scenario,logger,MethodConf)
         
-        start                                = time.process_time()
+        start                           = time.process_time()
         method.generateSamples()
-        end                                  = time.process_time()
-        runTime                              = end - start
+        end                             = time.process_time()
+        runTime                         = end - start
         results[method_type.code]['runTime'] = runTime
-        sample                               = method.posteriors
+        sample                          = method.posteriors
+        samplesToPlot[method_type]      = sample
+        diagnostics = {}
+        for waveform in sample.keys():
+            diagnostics["information_gain"] = sample[waveform].information_gain
+        results[method_type.code]['diagnostics'] = diagnostics
 
-        
         # analyze the samples
     
     #post processing
     # injct_params_wave = sample.to_dict(orient="records")[0:1]
     # SetupSignalAndDetector(wfv_args,ASD_file_name,injct_params_wave,True,logger)
-    
+    if saveResults:
+        SaveResults(results)
+        
     #make corner plot of the posterior samples
-    # result.plot_corner()
+    params = ["geocent_time", "chirp_mass", "mass_ratio", "luminosity_distance"] #,"mass_ratio","luminosity_distance"
+    plotOverlap(params,samplesToPlot)
 
 ###########################
 ###   Run actual Code   ###
 ###########################
-
-Main(run_sampler = True)
+Main(run_sampler = True, saveResults = True)

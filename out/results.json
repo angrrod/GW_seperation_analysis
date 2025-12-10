@@ -1,0 +1,20 @@
+{
+  "single_likl": {
+    "runTime": 17.243577300000002,
+    "diagnostics": {
+      "information_gain": 13.695349699145176
+    }
+  },
+  "joint_likl": {
+    "runTime": 27.949975600000002,
+    "diagnostics": {
+      "information_gain": 27.672543878976725
+    }
+  },
+  "hierarchical": {
+    "runTime": 37.7929343,
+    "diagnostics": {
+      "information_gain": 24.007390717673744
+    }
+  }
+}
