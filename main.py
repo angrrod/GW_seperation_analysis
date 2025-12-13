@@ -16,7 +16,7 @@ from collections import defaultdict
 import os
 import json
 import corner
-from bilby.core.result import plot_multiple
+from matplotlib.lines import Line2D
 
 ### this file consists of the main loop for the tests conscerning GW separation analysis ###
 @dataclass(frozen=True)
@@ -30,14 +30,15 @@ class WaveformConfig:
 
 @dataclass(frozen=True)
 class MethodConfig:
-    sampler:str   = "dynesty"
-    nlive: float  = 20 
-    dlogz: float  = 2        #stopping criterion for the evidence
-    sample: float = "rwalk"  
-    walks: float  = 5         #steps for MCMC sampeler to select new candidates     
-    nact: float   = 3           #amount of steps is tuned so autocorr is small enough 
-    npool: float  = 12
-
+    sampler:str  = "dynesty"
+    nlive: int   = 2000 #800
+    dlogz: float = 0.1         #stopping criterion for the evidence
+    sample: str  = "rslice" #rslice #unif', 'rwalk', 'slice', 'rslice', and 'auto' # performed until the autocorrelation length of the chain can be accurately determined.
+    bound: str   = "multi"
+    walks: int   = None          #steps for MCMC sampeler to select new candidates     
+    nact: int    = 200     #50      #amount of steps is tuned so autocorr is small enough, needed for determining the correct slicing behaviour
+    npool: int   = 18
+    maxmcmc: int = 20000
 class GWScenario:
     def __init__(self, logger ,config : WaveformConfig, injct_params_waves = None):
         self.logger             = logger
@@ -129,7 +130,7 @@ class GWScenario:
         self.logger.info("$$$ making time domain plot")
         white   = ts.whiten(4, 2).bandpass(40, 200)
         white_noise = ts_noise.whiten(4, 2).bandpass(40, 200)
-        t_start = timeCenter - 1.0
+        t_start = timeCenter - 2.0
         t_end   = timeCenter + 0.2
 
         white_zoom    = white.crop(t_start, t_end)
@@ -196,44 +197,44 @@ class GWScenario:
         self.logger.info("$$$ getting waveform parameters")
         
         #convert masses to chirp and ratio
-        m1_1, m2_1 = 12.0, 10.0
-        m1_2, m2_2 = 15.0, 10.0
+        m1_1, m2_1   = 12.0, 10.0
+        m1_2, m2_2   = 15.0, 10.0
         chirp_1, q_1 = massesToChirpAndQ(m1_1, m2_1)
         chirp_2, q_2 = massesToChirpAndQ(m1_2, m2_2)
         
         injct_params_wave_1 = dict(
-            chirp_mass=chirp_1,
-            mass_ratio=q_1,
-            a_1=0.6,  #part of the spin of the black hole
-            a_2=0.1,
-            tilt_1=0.5, #part of the spin of the black hole
-            tilt_2=2.3,
-            phi_12=2.2,  #part of the spin of the black hole
-            phi_jl=0.1,
-            luminosity_distance=2000.0, #2000
-            theta_jn=1.2, #angle of angular momentum
-            psi=2.659,  #angle of polarization
-            phase=1.9,
-            geocent_time=3,
-            ra=1.375, #longituded
-            dec=-1.2108,  #lattiude
+            chirp_mass          = chirp_1,
+            mass_ratio          = q_1,
+            a_1                 = 0.6,  #part of the spin of the black hole
+            a_2                 = 0.1,
+            tilt_1              = 0.5, #part of the spin of the black hole
+            tilt_2              = 2.3,
+            phi_12              = 2.2,  #part of the spin of the black hole
+            phi_jl              = 0.1,
+            luminosity_distance = 3000.0, #2000
+            theta_jn            = 1.2, #angle of angular momentum
+            psi                 = 2.659,  #angle of polarization
+            phase               = 1.9,
+            geocent_time        = 3,
+            ra                  = 1.375, #longituded
+            dec                 = -1.2108,  #lattiude
         )
         injct_params_wave_2 = dict(
-            chirp_mass=chirp_2,
-            mass_ratio=q_2,
-            a_1=0.2,  #part of the spin of the black hole
-            a_2=0.9,
-            tilt_1=0.2, #part of the spin of the black hole
-            tilt_2=2.0,
-            phi_12=5.7,  #part of the spin of the black hole
-            phi_jl=1.3,
-            luminosity_distance=2000.0, #2000
-            theta_jn=1.5, #angle of angular momentum
-            psi=2.659,  #angle of polarization
-            phase=1.2,
-            geocent_time=2.7,
-            ra=1.75, #longituded
-            dec=-2.8,  #lattiude
+            chirp_mass          = chirp_2,
+            mass_ratio          = q_2,
+            a_1                 = 0.2,  #part of the spin of the black hole
+            a_2                 = 0.9,
+            tilt_1              = 0.2, #part of the spin of the black hole
+            tilt_2              = 2.0,
+            phi_12              = 5.7,  #part of the spin of the black hole
+            phi_jl              = 1.3,
+            luminosity_distance = 3000.0, #2000
+            theta_jn            = 1.5, #angle of angular momentum
+            psi                 = 2.659,  #angle of polarization
+            phase               = 1.2,
+            geocent_time        = 2.0,
+            ra                  = 1.75, #longituded
+            dec                 = -2.8,  #lattiude
         )
         injct_params_waves = [injct_params_wave_1,injct_params_wave_2]
         return injct_params_waves
@@ -266,12 +267,12 @@ class Method(ABC):
     def likelihood(self):
         self.logger.info("$$$ get a single likelihood signal")
         likelihood = bilby.gw.GravitationalWaveTransient(
-            interferometers= self.scenario.ifos,
-            waveform_generator=self.scenario.wg,
-            priors=self.getPrior(),
-            distance_marginalization=False,
-            phase_marginalization=False,
-            time_marginalization=False,
+            interferometers          = self.scenario.ifos,
+            waveform_generator       = self.scenario.wg,
+            priors                   = self.getPrior(),
+            distance_marginalization = False,
+            phase_marginalization    = False,
+            time_marginalization     = False,
             # reference_frame="H1L1", #depends on the detector config -> ok?
             # time_reference="H1",
         )
@@ -279,21 +280,24 @@ class Method(ABC):
     
     def sampeler(self,resume):
         self.logger.info("$$$ Generating posterior samples using nested sampeling dynesty")
-        
+        clean = not resume
         sample = bilby.run_sampler(
-            likelihood=self.likelihood(),
-            priors=self.getPrior(),
-            sampler=self.config.sampler,
-            nlive=self.config.nlive, 
-            dlogz=self.config.dlogz, #stopping criterion for the evidence
-            sample=self.config.sample,  
-            walks=self.config.walks, #steps for MCMC sampeler to select new candidates     
-            nact=self.config.nact, #amount of steps is tuned so autocorr is small enough 
-            resume=resume,
-            outdir="out/outdir_ET_dynesty_" + self.method_type.code,
-            nested_mode="dynamic",
-            label=self.method_type.code,
-            npool=self.config.npool,
+            likelihood = self.likelihood(),
+            priors     = self.getPrior(),
+            sampler    = self.config.sampler,
+            nlive      = self.config.nlive, 
+            dlogz      = self.config.dlogz, #stopping criterion for the evidence
+            sample     = self.config.sample,  
+            walks      = self.config.walks, #steps for MCMC sampeler to select new candidates     
+            bound      = self.config.bound,
+            maxmcmc    = self.config.maxmcmc,
+            nact       = self.config.nact, #amount of steps is tuned so autocorr is small enough 
+            resume     = resume,
+            clean      = clean,
+            outdir     = "out/outdir_ET_dynesty_" + self.method_type.code,
+            label      = self.method_type.code,
+            npool      = self.config.npool,
+            queue_size = self.config.npool
         )
         return sample
     
@@ -347,20 +351,24 @@ class SingleSignalMethod(Method):
         #adapt the prior
         self.logger.info("$$$ Generating posterior samples using nested sampeling dynesty for single signal")
         prior = self.GetSinglePrior()
+        clean = not resume
         sample = bilby.run_sampler(
-            likelihood=self.likelihood(),
-            priors=prior,
-            sampler=self.config.sampler,
-            nlive=self.config.nlive, 
-            dlogz=self.config.dlogz, #stopping criterion for the evidence
-            sample=self.config.sample,  
-            walks=self.config.walks, #steps for MCMC sampeler to select new candidates     
-            nact=self.config.nact, #amount of steps is tuned so autocorr is small enough 
-            resume=resume,
-            outdir="out/outdir_ET_dynesty_" + self.method_type.code + self.nameExtra,
-            nested_mode="dynamic",
-            label=self.method_type.code,
-            npool=self.config.npool,
+            likelihood = self.likelihood(),
+            priors     = prior,
+            sampler    = self.config.sampler,
+            nlive      = self.config.nlive, 
+            dlogz      = self.config.dlogz, #stopping criterion for the evidence
+            sample     = self.config.sample,  
+            walks      = self.config.walks, #steps for MCMC sampeler to select new candidates  
+            bound      = self.config.bound,
+            maxmcmc    = self.config.maxmcmc,
+            nact       = self.config.nact, #amount of steps is tuned so autocorr is small enough 
+            resume     = resume,
+            clean      = clean,
+            outdir     = "out/outdir_ET_dynesty_" + self.method_type.code + self.nameExtra,
+            label      = self.method_type.code,
+            npool      = self.config.npool,
+            queue_size = self.config.npool
         )
         return sample
     
@@ -473,8 +481,9 @@ class HyrarchicalMethod(Method):
 
 class Method_type(Enum):
     SINGLE       = ("single_likl", SingleSignalMethod)
-    JOINT        = ("joint_likl", JointLikelihoodlMethod)
     HIERARCHICAL = ("hierarchical",HyrarchicalMethod)  
+    JOINT        = ("joint_likl", JointLikelihoodlMethod)  #this needs to be first
+
     
     def __init__(self, code, method: Method):
         self.code   = code
@@ -482,8 +491,6 @@ class Method_type(Enum):
 
 ### helper functions ###
 
-#TODO:refactor?
-#TODO: different center parameter
 def getMaximumLikelihood(result):
     posterior = result.posterior
     idx_ml    = posterior["log_likelihood"].idxmax()
@@ -507,48 +514,70 @@ def SaveResults(results, out_dir="out", filename="results.json"):
         json.dump(results, f, indent=2)
     return path
 
-def plotOverlap(params,results):
-    params_A, params_B = addSuffixes(params)
+def plotOverlap(params,results,truths,logger):
+    logger.info("$$$ Making corner plots")
     fig                = None  #necessary for initialization
+    params_A, params_B = addSuffixes(params)
+    
+    #colors
     cmap               = plt.get_cmap("tab20")
     colors             = list(cmap.colors)        # length 20
     n_colors           = len(colors)
-    color_idx          = 0  
+    color_idx          = 0 
+    legend_handles = []  
+    legend_labels  = []
+    
     for method in results:
         res = results[method]
         for waveform in res:
             wave = res[waveform]
             color = colors[color_idx % n_colors]
             color_idx += 1            #separate the joint poisterior that ends with _A and _B in their respective posterior samples
+            label = f"{method.code} – {waveform}"
+            
             if method == Method_type.JOINT:
-                fig = createCornerPlot(wave.posterior[params_A].values,params,color,fig)
-                fig = createCornerPlot(wave.posterior[params_B].values,params,color,fig)
+                df_A = wave.posterior.copy()
+                df_A.rename(columns=params_A, inplace=True)
+                df_B = wave.posterior.copy()
+                df_B.rename(columns=params_B, inplace=True)
+                fig = createCornerPlot(df_A[params].values,params,color,fig,truths[1])  #index doesn't matter as things get overlapped
+                fig = createCornerPlot(df_B[params].values,params,color,fig,truths[0])
             else:
-                # Single waveform
-                fig = createCornerPlot(wave.posterior[params].values,params,color,fig)
+                #Single waveform
+                fig = createCornerPlot(wave.posterior[params].values,params,color,fig,truths[0])
+            legend_handles.append(
+                Line2D([0], [0], color=color, lw=2)
+            )
+            legend_labels.append(label)
 
-    # Optionally adjust and show/save
+    fig.legend(
+        legend_handles,
+        legend_labels,
+        loc="upper right",
+        frameon=False,
+        fontsize=10,
+    )
     fig.tight_layout()
     fig.savefig("Plots/multiple waveforms.png", dpi=200)
     
-def createCornerPlot(samps,params,color,fig,weights = None):
+def createCornerPlot(samps,params,color,fig,truths):
     fig = corner.corner(
         samps,
-        labels=params,          # base labels, no _A/_B
-        color=color,
-        # weights = weights,
-        plot_contours=True,
-        fill_contours=False,
-        hist_kwargs=dict(density=True),
-        fig=fig,                # None for first call; existing fig later
+        labels        = params,          # base labels, no _A/_B
+        color         = color,
+        truths        = truths,
+        truth_color   = "black",
+        plot_contours = True,
+        fill_contours = False,
+        hist_kwargs   = dict(density=True),
+        fig           = fig,    # None for first call; existing fig later
     )
     return fig
 
 def addSuffixes(strings):
-    suffixed_A = [s + "_A" for s in strings]
-    suffixed_B = [s + "_B" for s in strings]
+    suffixed_A = {s + "_A":s for s in strings}
+    suffixed_B = {s + "_B":s for s in strings}
     return suffixed_A, suffixed_B
-
 
 
 ###########################
@@ -560,6 +589,11 @@ def Main(run_sampler,saveResults):
     Args:
         run_sampler (bool): Describes if the sampler should be run from scratch, performing an entire sampeling run.
     """
+    # needed for multi threading
+    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["MKL_NUM_THREADS"] = "1"
+    os.environ["OPENBLAS_NUM_THREADS"] = "1"
+    
     #Logger
     bilby.core.utils.setup_logger(
         log_level="INFO",
@@ -571,18 +605,15 @@ def Main(run_sampler,saveResults):
     
     #build scenario
     ScenarioConfig = WaveformConfig()
-    scenario = GWScenario(logger, ScenarioConfig)
+    scenario       = GWScenario(logger, ScenarioConfig)
     scenario.setUpScenario()
     scenario.makePlots(["strain_time_domain_set_up","qtransform_set_up"])
     
-    #used for measuring overlap etc with the joint.
-    results       = {method_type.code: {} for method_type in Method_type}
-    results       = defaultdict(dict) #make dicts independent
+    results       = defaultdict(dict, {mt.code: {} for mt in Method_type}) #used for measuring overlap etc with the joint.
+    samplesToPlot = defaultdict(dict, {mt.code: {} for mt in Method_type}) #used for plotting
+    MethodConf    = MethodConfig()
     
-    #used for plotting
-    samplesToPlot  = {method_type.code: {} for method_type in Method_type}
-    samplesToPlot  = defaultdict(dict)
-    MethodConf     = MethodConfig()
+    JointBaselineDistr = None
     for method_type in Method_type:
         logger.info(f"$$$ Running method: {method_type.code}")
         method  = method_type.method(run_sampler,scenario,logger,MethodConf)
@@ -592,13 +623,24 @@ def Main(run_sampler,saveResults):
         end                             = time.process_time()
         runTime                         = end - start
         results[method_type.code]['runTime'] = runTime
+        # if method_type == Method_type.JOINT:
+        #     JointBaselineDistr
+        # elif JointBaselineDistr is None:
+        #     raise ValueError("joint serves as a baseline and needs to be ran first")
+        
+        # else: pass
+        
+        #plotting info
         sample                          = method.posteriors
         samplesToPlot[method_type]      = sample
+        
+        #build measurements
         diagnostics = {}
+        diagnostics["information_gain"] = []
         for waveform in sample.keys():
-            diagnostics["information_gain"] = sample[waveform].information_gain
+            diagnostics["information_gain"].append(sample[waveform].information_gain)
         results[method_type.code]['diagnostics'] = diagnostics
-
+        
         # analyze the samples
     
     #post processing
@@ -608,8 +650,10 @@ def Main(run_sampler,saveResults):
         SaveResults(results)
         
     #make corner plot of the posterior samples
-    params = ["geocent_time", "chirp_mass", "mass_ratio", "luminosity_distance"] #,"mass_ratio","luminosity_distance"
-    plotOverlap(params,samplesToPlot)
+    params = ["chirp_mass", "mass_ratio", "luminosity_distance"] #,"mass_ratio","luminosity_distance"
+    truths = scenario.GetWaveFormParams()
+    truths = [[d[k] for k in params if k in d] for d in truths]  #get params to be plotted in corner plot
+    plotOverlap(params,samplesToPlot,truths,logger)
 
 ###########################
 ###   Run actual Code   ###
