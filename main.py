@@ -25,18 +25,18 @@ class WaveformConfig:
     minimum_frequency: float   = 20.0 #10
     sampling_frequency: float  = 4096.0
     reference_frequency: float = 20.0 #10
-    duration: float            = 6.0
+    duration: float            = 16.0
+    time_delta: float          = 3.0
     ASD_file_name: str         = "ET_D"
-
 @dataclass(frozen=True)
 class MethodConfig:
     sampler:str  = "dynesty"
-    nlive: int   = 2000 #800
+    nlive: int   = 500 #800
     dlogz: float = 0.1         #stopping criterion for the evidence
     sample: str  = "rslice" #rslice #unif', 'rwalk', 'slice', 'rslice', and 'auto' # performed until the autocorrelation length of the chain can be accurately determined.
     bound: str   = "multi"
     walks: int   = None          #steps for MCMC sampeler to select new candidates     
-    nact: int    = 200     #50      #amount of steps is tuned so autocorr is small enough, needed for determining the correct slicing behaviour
+    nact: int    = 100     #100      #amount of steps is tuned so autocorr is small enough, needed for determining the correct slicing behaviour
     npool: int   = 18
     maxmcmc: int = 20000
 class GWScenario:
@@ -93,7 +93,8 @@ class GWScenario:
             duration=self.config.duration,
             sampling_frequency=self.config.sampling_frequency,
             frequency_domain_source_model=lal_binary_black_hole,
-            waveform_arguments={k: v for k, v in asdict(self.config).items() if k not in {"sampling_frequency","duration","ASD_file_name"}}  #remove redundant variables
+            waveform_arguments={k: v for k, v in asdict(self.config).items() if k in {"waveform_approximant","minimum_frequency","reference_frequency"
+}}  #remove redundant variables
         )
         
         #inject N waves
@@ -104,7 +105,7 @@ class GWScenario:
                 parameters=inject_params
             )
     
-    def _getDataTimeSeries(self,strainI):
+    def _getDataTimeSeries(self,strainI,ifos):
         """
         get timeseries objects of original noise and signal+noise for plotting 
         
@@ -114,9 +115,13 @@ class GWScenario:
             ts: original timeseries with noise + signal
             ts_noise: timeseries noise 
         """
+        #use default scenario based ifo's
+        if ifos is None:
+            ifos = self.ifos
+            
         self.logger.info("$$$ getting time series objects")
-        td = self.ifos[strainI].strain_data.time_domain_strain          # numpy array (length = duration * fs)
-        t0 = self.ifos[strainI].strain_data.start_time                  # GPS start time (float)
+        td = ifos[strainI].strain_data.time_domain_strain          # numpy array (length = duration * fs)
+        t0 = ifos[strainI].strain_data.start_time                  # GPS start time (float)
         fs = self.config.sampling_frequency
 
         #convert data
@@ -130,8 +135,8 @@ class GWScenario:
         self.logger.info("$$$ making time domain plot")
         white   = ts.whiten(4, 2).bandpass(40, 200)
         white_noise = ts_noise.whiten(4, 2).bandpass(40, 200)
-        t_start = timeCenter - 2.0
-        t_end   = timeCenter + 0.2
+        t_start = timeCenter - 3.0
+        t_end   = timeCenter + 0.5
 
         white_zoom    = white.crop(t_start, t_end)
         white_noise_zoom = white_noise.crop(t_start, t_end)
@@ -170,7 +175,7 @@ class GWScenario:
         qspec = ts.q_transform(
             qrange=(8, 8),
             frange=(20, 512),
-            outseg=(timeCenter - 3, timeCenter + 3), 
+            outseg=(timeCenter - self.config.duration//2, timeCenter + self.config.duration//2), 
             whiten=True,              
         )
 
@@ -183,11 +188,11 @@ class GWScenario:
         ax.set_title("Q-transform of strain around first merger")
         fig.savefig("Plots/"+fileName+".png", dpi=300, bbox_inches="tight")
         
-    def makePlots(self,fileNames):
+    def makePlots(self,fileNames,ifos = None):
         self.logger.info("$$$ making plots")
         # data plots
         # corner plot already done
-        ts, ts_noise = self._getDataTimeSeries(0)
+        ts, ts_noise = self._getDataTimeSeries(0,ifos)
         tc           = self.injct_params_waves[0]['geocent_time']
         
         self._PlotTimeSignal(ts,tc,ts_noise,fileNames[0])
@@ -208,35 +213,35 @@ class GWScenario:
             a_1                 = 0.6,  #part of the spin of the black hole
             a_2                 = 0.1,
             tilt_1              = 0.5, #part of the spin of the black hole
-            tilt_2              = 2.3,
-            phi_12              = 2.2,  #part of the spin of the black hole
+            tilt_2              = 0.3,
+            phi_12              = 0.2,  #part of the spin of the black hole
             phi_jl              = 0.1,
             luminosity_distance = 3000.0, #2000
-            theta_jn            = 1.2, #angle of angular momentum
+            theta_jn            = 0.2, #angle of angular momentum
             psi                 = 2.659,  #angle of polarization
-            phase               = 1.9,
-            geocent_time        = 3,
+            phase               = 0.9,
+            geocent_time        = self.config.duration/2,
             ra                  = 1.375, #longituded
             dec                 = -1.2108,  #lattiude
         )
-        injct_params_wave_2 = dict(
-            chirp_mass          = chirp_2,
-            mass_ratio          = q_2,
-            a_1                 = 0.2,  #part of the spin of the black hole
-            a_2                 = 0.9,
-            tilt_1              = 0.2, #part of the spin of the black hole
-            tilt_2              = 2.0,
-            phi_12              = 5.7,  #part of the spin of the black hole
-            phi_jl              = 1.3,
-            luminosity_distance = 3000.0, #2000
-            theta_jn            = 1.5, #angle of angular momentum
-            psi                 = 2.659,  #angle of polarization
-            phase               = 1.2,
-            geocent_time        = 2.0,
-            ra                  = 1.75, #longituded
-            dec                 = -2.8,  #lattiude
-        )
-        injct_params_waves = [injct_params_wave_1,injct_params_wave_2]
+        # injct_params_wave_2 = dict(
+        #     chirp_mass          = chirp_2,
+        #     mass_ratio          = q_2,
+        #     a_1                 = 0.2,  #part of the spin of the black hole
+        #     a_2                 = 0.9,
+        #     tilt_1              = 0.2, #part of the spin of the black hole
+        #     tilt_2              = 2.0,
+        #     phi_12              = 5.7,  #part of the spin of the black hole
+        #     phi_jl              = 1.3,
+        #     luminosity_distance = 3000.0, #2000
+        #     theta_jn            = 1.5, #angle of angular momentum
+        #     psi                 = 2.659,  #angle of polarization
+        #     phase               = 1.2,
+        #     geocent_time        = self.config.duration/2 - time_delta,
+        #     ra                  = 1.75, #longituded
+        #     dec                 = -2.8,  #lattiude
+        # )
+        injct_params_waves = [injct_params_wave_1]#,injct_params_wave_2]
         return injct_params_waves
     
     def build_ref_injection(self,injections):
@@ -317,9 +322,10 @@ class Method(ABC):
         self.logger.info("$$$ getting a waveform prior")
         prior = bilby.gw.prior.BBHPriorDict()  #allow for default ranges in ET
         if "geocent_time" not in prior:
+            self.logger.info("$$$ geocent_time not in prior")
             prior["geocent_time"] = bilby.core.prior.Uniform(
-                minimum=0.5,#maybe make this a bit bigger?
-                maximum=10,  
+                minimum=0,#maybe make this a bit bigger?
+                maximum=self.scenario.config.duration,  
                 name="geocent_time",
             )
         return prior
@@ -425,10 +431,8 @@ class HyrarchicalMethod(Method):
         
     def generateSamples(self):
         self.logger.info("$$$ generate Samples for hyrarchical model")
-        # 
         self.singleSampler.generateSamples()
-        
-        posteriorSampleA     = self.singleSampler.posteriors['waveFormA']
+        posteriorSampleA     = copy.deepcopy(self.singleSampler.posteriors["waveFormA"])
         MLPosteriorA         = getMaximumLikelihood(posteriorSampleA)
         pols                 = self.scenario.wg.frequency_domain_strain(MLPosteriorA) #returns cross and plus waveform
         second_wave_ifos     = []
@@ -439,8 +443,9 @@ class HyrarchicalMethod(Method):
             second_wave_ifo      = self._GetIfoResidual(res_fd,ifo)
             second_wave_ifos.append(second_wave_ifo)
         self.second_wave_ifos = InterferometerList(second_wave_ifos)
+        self.scenario.makePlots(["strain_time_domain_set_up_hyrarchical","qtransform_set_up_hyrarchical"],self.second_wave_ifos)
         super().generateSamples()
-        posteriorSampleB     = self.singleSampler.posteriors['waveFormA']
+        posteriorSampleB     = self.posteriors['waveFormA']
         self.posteriors = {
             "waveFormA" : posteriorSampleA,
             "waveFormB" : posteriorSampleB
@@ -482,7 +487,7 @@ class HyrarchicalMethod(Method):
 class Method_type(Enum):
     SINGLE       = ("single_likl", SingleSignalMethod)
     HIERARCHICAL = ("hierarchical",HyrarchicalMethod)  
-    JOINT        = ("joint_likl", JointLikelihoodlMethod)  #this needs to be first
+    # JOINT        = ("joint_likl", JointLikelihoodlMethod)  
 
     
     def __init__(self, code, method: Method):
@@ -535,16 +540,16 @@ def plotOverlap(params,results,truths,logger):
             color_idx += 1            #separate the joint poisterior that ends with _A and _B in their respective posterior samples
             label = f"{method.code} – {waveform}"
             
-            if method == Method_type.JOINT:
-                df_A = wave.posterior.copy()
-                df_A.rename(columns=params_A, inplace=True)
-                df_B = wave.posterior.copy()
-                df_B.rename(columns=params_B, inplace=True)
-                fig = createCornerPlot(df_A[params].values,params,color,fig,truths[1])  #index doesn't matter as things get overlapped
-                fig = createCornerPlot(df_B[params].values,params,color,fig,truths[0])
-            else:
+            # if method == Method_type.JOINT:
+            #     df_A = wave.posterior.copy()
+            #     df_A.rename(columns=params_A, inplace=True)
+            #     df_B = wave.posterior.copy()
+            #     df_B.rename(columns=params_B, inplace=True)
+            #     fig = createCornerPlot(df_A[params].values,params,color,fig,truths[1])  #index doesn't matter as things get overlapped
+            #     fig = createCornerPlot(df_B[params].values,params,color,fig,truths[0])
+            # else:
                 #Single waveform
-                fig = createCornerPlot(wave.posterior[params].values,params,color,fig,truths[0])
+            fig = createCornerPlot(wave.posterior[params].values,params,color,fig,truths[0])
             legend_handles.append(
                 Line2D([0], [0], color=color, lw=2)
             )
@@ -638,7 +643,7 @@ def Main(run_sampler,saveResults):
         diagnostics = {}
         diagnostics["information_gain"] = []
         for waveform in sample.keys():
-            diagnostics["information_gain"].append(sample[waveform].information_gain)
+            diagnostics["information_gain"].append(sample[waveform].information_gain) #KL between prior and posterior.
         results[method_type.code]['diagnostics'] = diagnostics
         
         # analyze the samples
@@ -650,11 +655,20 @@ def Main(run_sampler,saveResults):
         SaveResults(results)
         
     #make corner plot of the posterior samples
-    params = ["chirp_mass", "mass_ratio", "luminosity_distance"] #,"mass_ratio","luminosity_distance"
+    params = [
+        "chirp_mass",
+        "mass_ratio", 
+        "luminosity_distance",
+        "psi",
+        "phase",
+        "geocent_time",
+        # "ra",
+        # "dec"
+        ] #,"mass_ratio","luminosity_distance"
     truths = scenario.GetWaveFormParams()
     truths = [[d[k] for k in params if k in d] for d in truths]  #get params to be plotted in corner plot
     plotOverlap(params,samplesToPlot,truths,logger)
-
+    
 ###########################
 ###   Run actual Code   ###
 ###########################
