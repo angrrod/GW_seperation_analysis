@@ -95,7 +95,7 @@ class Method(ABC):
     def getPrior(self):
         pass
 
-    def _getMaximumLikelihood(result):
+    def _getMaximumLikelihood(self,result):
         posterior = result.posterior
         idx_ml    = posterior["log_likelihood"].idxmax()
         ml_sample = posterior.loc[idx_ml]
