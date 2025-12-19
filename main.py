@@ -11,7 +11,7 @@ import argparse
 ####     Main Loop     ####
 ###########################
 
-def Main(run_sampler: bool, method):
+def Main(run_sampler: bool, method_type):
     """_summary_
     Args:
         run_sampler (bool): Describes if the sampler should be run from scratch, performing an entire sampeling run.
@@ -27,20 +27,20 @@ def Main(run_sampler: bool, method):
     
     scenario,logger,_,data_dir = utils.setUpLoggerScenario(ScenConfig)
     
-    if method is None:
-        raise ValueError(f"Unknown method '{method}'")
+    if method_type is None:
+        raise ValueError(f"Unknown method '{method_type}'")
     else:
-        logger.info(f"$$$ Running method: {method.code}")
-        method  = method.method(run_sampler,scenario,logger,MethodConf)
+        logger.info(f"$$$ Running method: {method_type.code}")
+        method  = method_type.method(run_sampler,scenario,logger,MethodConf)
         
         start                                = time.process_time()
         method.generateSamples()
         end                                  = time.process_time()
         runTime                              = end - start
-        results[method.code]['runTime'] = runTime
+        results[method_type.code]['runTime'] = runTime
         method_meta = {"runTime" : runTime}
         
-        utils.writeMethodResult(data_dir,method.code,method_meta,method.results,logger)
+        utils.writeMethodResult(data_dir,method_type.code,method_meta,method.results,logger)
         
 def parse_args():
     parser = argparse.ArgumentParser(
