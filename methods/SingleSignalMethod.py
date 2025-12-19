@@ -28,7 +28,7 @@ class SingleSignalMethod(Method):
             nact       = self.config.nact, #amount of steps is tuned so autocorr is small enough 
             resume     = resume,
             clean      = clean,
-            outdir     = "out/outdir_ET_dynesty_" + self.method_type.code + self.nameExtra,
+            outdir     = "logs/log_ET_dynesty_" + self.method_type.code + self.nameExtra,
             label      = self.method_type.code,
             npool      = self.config.npool,
             queue_size = self.config.npool

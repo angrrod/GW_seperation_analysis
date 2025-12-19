@@ -1,7 +1,7 @@
 from enum import Enum
 class Method_type(Enum):
     SINGLE = "single_likl"
-    HIERARCHICAL = "hierarchical"
+    # HIERARCHICAL = "hierarchical"
     # JOINT = "joint_likl"
 
     @property
@@ -14,13 +14,10 @@ class Method_type(Enum):
         if self is Method_type.SINGLE:
             from .SingleSignalMethod import SingleSignalMethod
             return SingleSignalMethod
-        if self is Method_type.HIERARCHICAL:
-            from .HyrarchicalMethod import HyrarchicalMethod
-            return HyrarchicalMethod
-        if self is Method_type.HIERARCHICAL:
-            from .HyrarchicalMethod import HyrarchicalMethod
-            return HyrarchicalMethod
         # if self is Method_type.HIERARCHICAL:
+        #     from .HyrarchicalMethod import HyrarchicalMethod
+        #     return HyrarchicalMethod
+        # if self is Method_type.JOINT:
         #     from .JointLikelihoodlMethod import JointLikelihoodlMethod
         #     return JointLikelihoodlMethod
         raise KeyError(self)

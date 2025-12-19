@@ -14,11 +14,7 @@ class GWScenario:
         if injct_params_waves is None:
             self.injct_params_waves = self.GetWaveFormParams()
             
-        #set-up plotting dirs
-        self.out_dir = "out"
-        self.plot_dir = os.path.join(self.out_dir, "Plots")
-        os.makedirs(self.plot_dir, exist_ok=True)
-        
+        #set-up plotting dirs separate from post processing dir
         #parameters to be initialized during set_up:
         self.ifos     = None
         self.noise_td = None #for plotting
@@ -67,7 +63,7 @@ class GWScenario:
             sampling_frequency=self.config.sampling_frequency,
             frequency_domain_source_model=lal_binary_black_hole,
             waveform_arguments={k: v for k, v in asdict(self.config).items() if k in {"waveform_approximant","minimum_frequency","reference_frequency"
-}}  #remove redundant variables
+        }}  #remove redundant variables
         )
         
         #inject N waves
@@ -103,7 +99,7 @@ class GWScenario:
         return ts, ts_noise
     
     ### plots ###
-    def _PlotTimeSignal(self,ts,timeCenter,ts_noise,fileName):
+    def _PlotTimeSignal(self,ts,timeCenter,ts_noise,fileName,outDir):
         #plot time domain of signal
         self.logger.info("$$$ making time domain plot")
         white   = ts.whiten(4, 2).bandpass(40, 200)
@@ -139,10 +135,10 @@ class GWScenario:
         ax.set_ylabel("Strain")
         ax.legend(loc="upper right")
         
-        path = os.path.join(self.plot_dir, f"{fileName}.png")
+        path = os.path.join(outDir, f"{fileName}.png")
         fig.savefig(path, dpi=300, bbox_inches="tight")
                 
-    def _PlotQtrans(self,timeCenter,ts,fileName):
+    def _PlotQtrans(self,timeCenter,ts,fileName,outDir):
         self.logger.info("$$$ making Qtransformed plot")
         qspec = ts.q_transform(
             qrange=(8, 8),
@@ -158,18 +154,18 @@ class GWScenario:
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("Frequency (Hz)")
         ax.set_title("Q-transform of strain around first merger")
-        path = os.path.join(self.plot_dir, f"{fileName}.png")
+        path = os.path.join(outDir, f"{fileName}.png")
         fig.savefig(path, dpi=300, bbox_inches="tight")
         
-    def makePlots(self,fileNames,ifos = None):
+    def makePlots(self,fileNames,outDir,ifos = None):
         self.logger.info("$$$ making plots")
         # data plots
         # corner plot already done
         ts, ts_noise = self._getDataTimeSeries(0,ifos)
         tc           = self.injct_params_waves[0]['geocent_time']
         
-        self._PlotTimeSignal(ts,tc,ts_noise,fileNames[0])
-        self._PlotQtrans(tc,ts,fileNames[1])
+        self._PlotTimeSignal(ts,tc,ts_noise,fileNames[0],outDir)
+        self._PlotQtrans(tc,ts,fileNames[1],outDir)
     
     def GetWaveFormParams(self):
         self.logger.info("$$$ getting waveform parameters")

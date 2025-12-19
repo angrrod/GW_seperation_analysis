@@ -6,7 +6,7 @@ from .MethodConfig import MethodConfig
 from .Method_type import Method_type
 from .SingleSignalMethod import SingleSignalMethod
 from scenario import GWScenario
-
+import os
 class HyrarchicalMethod(Method):
     def __init__(self,run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig):
         super().__init__(run_sampler, scenario, logger, config)
@@ -18,8 +18,8 @@ class HyrarchicalMethod(Method):
     def generateSamples(self):
         self.logger.info("$$$ generate Samples for hyrarchical model")
         self.singleSampler.generateSamples()
-        posteriorSampleA     = copy.deepcopy(self.singleSampler.posteriors["waveFormA"])
-        MLPosteriorA         = self._getMaximumLikelihood(posteriorSampleA)
+        resultsSampleA     = copy.deepcopy(self.singleSampler.results["waveFormA"])
+        MLPosteriorA         = self._getMaximumLikelihood(resultsSampleA)
         pols                 = self.scenario.wg.frequency_domain_strain(MLPosteriorA) #returns cross and plus waveform
         second_wave_ifos     = []
         for ifo in self.scenario.ifos:
@@ -29,12 +29,13 @@ class HyrarchicalMethod(Method):
             second_wave_ifo      = self._GetIfoResidual(res_fd,ifo)
             second_wave_ifos.append(second_wave_ifo)
         self.second_wave_ifos = InterferometerList(second_wave_ifos)
-        self.scenario.makePlots(["strain_time_domain_set_up_hyrarchical","qtransform_set_up_hyrarchical"],self.second_wave_ifos)
+        
+        self.scenario.makePlots(["strain_time_domain_set_up_hyrarchical","qtransform_set_up_hyrarchical"],"",self.second_wave_ifos)
         super().generateSamples()
-        posteriorSampleB     = self.posteriors['waveFormA']
-        self.posteriors = {
-            "waveFormA" : posteriorSampleA,
-            "waveFormB" : posteriorSampleB
+        resultsSampleB     = self.results['waveFormA']
+        self.results = {
+            "waveFormA" : resultsSampleA,
+            "waveFormB" : resultsSampleB
         }
         
         

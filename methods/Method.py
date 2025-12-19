@@ -15,7 +15,7 @@ class Method(ABC):
         self.config      = config
         
         #results
-        self.posteriors = None
+        self.results = None
     
     def likelihood(self):
         self.logger.info("$$$ get a single likelihood signal")
@@ -47,7 +47,7 @@ class Method(ABC):
             nact       = self.config.nact, #amount of steps is tuned so autocorr is small enough 
             resume     = resume,
             clean      = clean,
-            outdir     = "out/outdir_ET_dynesty_" + self.method_type.code,
+            outdir     = "logs/log_ET_dynesty_" + self.method_type.code,
             label      = self.method_type.code,
             npool      = self.config.npool,
             queue_size = self.config.npool
@@ -61,9 +61,9 @@ class Method(ABC):
             full_rerun = not self.run_sampler
             result = self.sampeler(full_rerun)
         else:
-            outdir = "out/outdir_ET_dynesty_" + self.method_type.code + "/" + self.method_type.code + "_result.json"
+            outdir = "logs/log_ET_dynesty_" + self.method_type.code + "/" + self.method_type.code + "_result.json"
             result = read_in_result(outdir) #outdir is also used in sampeler 
-        self.posteriors = {"waveFormA" : result} #pandas data frame of samples
+        self.results = {"waveFormA" : result} #result object
         
     ###   priors   ###
     def GetSinglePrior(self):
