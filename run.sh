@@ -17,9 +17,6 @@ source $VSC_DATA/miniconda3/etc/profile.d/conda.sh
 # Activate the custom conda environment
 conda activate ThesisEnv
 
-# Make sure HPC can access the API key
-export WANDB_API_KEY="a60c2702a6cb6c266aa5ebc8d6ba83520768fde2"
-
 # Capture the first two command-line arguments as parameters
 MODEL_TYPE=$1
 NFOLDS=$2

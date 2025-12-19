@@ -1,9 +1,11 @@
 ### this script is made so it analyses the results obtained from the main GW sampeling step ###
 import utils
-
+from scenario import ScenarioConfig
 
 def Main():
-    scenario,logger,plot_dir,data_dir = utils.setUpLoggerScenario()
+    #build scenario
+    ScenConfig     = ScenarioConfig()
+    scenario,logger,plot_dir,data_dir = utils.setUpLoggerScenario(ScenConfig)
     data_dir = data_dir+"/results.hdf5"
     results = utils.exctractResults(data_dir,logger)
     
@@ -28,5 +30,5 @@ def Main():
 ###########################
 ###   Run actual Code   ###
 ###########################
-
-Main()
+if __name__ == "__main__":
+    Main()

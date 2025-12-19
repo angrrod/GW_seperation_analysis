@@ -83,7 +83,7 @@ def addSuffixes(strings):
     suffixed_B = {s + "_B":s for s in strings}
     return suffixed_A, suffixed_B
 
-def setUpLoggerScenario():
+def setUpLoggerScenario(ScenConfig):
     #set-up plotting dirs
     out_dir = "postProcessing"
     plot_dir = os.path.join(out_dir, "Plots")
@@ -98,8 +98,6 @@ def setUpLoggerScenario():
     logger = bilby.core.utils.logger
     logger.info("$$$ start_run")
     
-    #build scenario
-    ScenConfig     = ScenarioConfig()
     scenario       = GWScenario(logger, ScenConfig)
     scenario.setUpScenario()
     return scenario,logger,plot_dir,out_dir
