@@ -33,9 +33,9 @@ def Main(run_sampler: bool, method_type):
         logger.info(f"$$$ Running method: {method_type.code}")
         method  = method_type.method(run_sampler,scenario,logger,MethodConf)
         
-        start                                = time.process_time()
+        start                                = time.process_time() #in seconds
         method.generateSamples()
-        end                                  = time.process_time()
+        end                                  = time.process_time() #in seconds
         runTime                              = end - start
         results[method_type.code]['runTime'] = runTime
         method_meta = {"runTime" : runTime}

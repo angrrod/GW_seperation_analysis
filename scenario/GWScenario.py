@@ -1,6 +1,7 @@
 import bilby
 import numpy as np
 from bilby.gw.source import lal_binary_black_hole
+from bilby.gw.detector.networks import TriangularInterferometer
 from gwpy.timeseries import TimeSeries
 import matplotlib.pyplot as plt
 from dataclasses import asdict
@@ -32,10 +33,7 @@ class GWScenario:
         psd        = asd**2
         np.savetxt(self.config.ASD_file_name+"_PSD"+".txt", np.column_stack([asd_f, psd]))
         
-        et1       = bilby.gw.detector.get_empty_interferometer("L1")
-        # et2       = bilby.gw.detector.get_empty_interferometer("ET2")
-        # et3       = bilby.gw.detector.get_empty_interferometer("ET3")
-        self.ifos = bilby.gw.detector.InterferometerList([et1]) #, et2, et3
+        self.ifos = self._getInterferrometerSetUp(psd)
         
         #load spectral density according to the file
         for ifo in self.ifos:
@@ -73,6 +71,37 @@ class GWScenario:
                 waveform_generator=self.wg,
                 parameters=inject_params
             )
+    def _getInterferrometerSetUp(self,psd):
+        #einstein set-up at rhine meuse
+        latitude_deg  = 50.85      
+        longitude_deg = 5.70    
+        elevation_m   = 100.0   #altitde of detector
+        
+        xarm_azimuth_deg = 0.0
+        yarm_azimuth_deg = xarm_azimuth_deg + 60.0
+        
+        ifos_1 = TriangularInterferometer(
+            name="ET",
+            power_spectral_density=psd,
+            minimum_frequency=self.config.minimum_frequency,   # choose consistently with your waveform and PSD validity
+            maximum_frequency=2048.0,                          # e.g. Nyquist-ish; bilby will also use your strain settings
+            length=10.0,    #km                              
+            latitude=latitude_deg,
+            longitude=longitude_deg,
+            elevation=elevation_m,
+            xarm_azimuth=xarm_azimuth_deg,
+            yarm_azimuth=yarm_azimuth_deg
+        )
+        
+        #CE set-up
+        H1 = bilby.gw.detector.get_empty_interferometer("H1")
+        L1 = bilby.gw.detector.get_empty_interferometer("L1")
+        for ifo in [H1, L1]:
+            ifo.length = 40.0  # km
+        ifos_2 = bilby.gw.detector.InterferometerList([H1, L1])
+        
+        ifos = bilby.gw.detector.InterferometerList(ifos_1 + ifos_2)
+        return ifos
     
     def _getDataTimeSeries(self,strainI,ifos):
         """
