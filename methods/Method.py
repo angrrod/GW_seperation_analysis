@@ -76,6 +76,21 @@ class Method(ABC):
                 maximum=self.scenario.config.duration,  
                 name="geocent_time",
             )
+        prior["chirp_mass"] = bilby.core.prior.Uniform(
+            minimum=4, maximum=200, name="chirp_mass"
+        )
+        prior["mass_ratio"] = bilby.core.prior.Uniform(
+            minimum=0.1, maximum=1, name="mass_ratio"
+        )
+        prior["luminosity_distance"] = bilby.gw.prior.UniformSourceFrame(
+            minimum=1e3,      # 1 Gpc  = 1000 Mpc
+            maximum=1e5,      # 100 Gpc = 100000 Mpc
+            cosmology='Planck15',
+            name='luminosity_distance',
+            latex_label='$d_L$',
+            unit='Mpc'
+        )
+        
         return prior
     
     #needed for joint parameter estimation

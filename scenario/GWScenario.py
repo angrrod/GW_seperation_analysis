@@ -35,12 +35,6 @@ class GWScenario:
         
         self.ifos = self._getInterferrometerSetUp(psd)
         
-        #load spectral density according to the file
-        for ifo in self.ifos:
-            ifo.power_spectral_density = bilby.gw.detector.PowerSpectralDensity.from_power_spectral_density_file(
-                psd_file=self.config.ASD_file_name+"_PSD"+".txt"
-            )
-
         #add gaussian noise
         self.ifos.set_strain_data_from_power_spectral_densities(
             sampling_frequency=self.config.sampling_frequency,
@@ -82,13 +76,13 @@ class GWScenario:
         
         ifos_1 = TriangularInterferometer(
             name="ET",
-            power_spectral_density=psd,
             minimum_frequency=self.config.minimum_frequency,   # choose consistently with your waveform and PSD validity
             maximum_frequency=2048.0,                          # e.g. Nyquist-ish; bilby will also use your strain settings
             length=10.0,    #km                              
             latitude=latitude_deg,
             longitude=longitude_deg,
             elevation=elevation_m,
+            power_spectral_density=psd,
             xarm_azimuth=xarm_azimuth_deg,
             yarm_azimuth=yarm_azimuth_deg
         )
@@ -101,6 +95,13 @@ class GWScenario:
         ifos_2 = bilby.gw.detector.InterferometerList([H1, L1])
         
         ifos = bilby.gw.detector.InterferometerList(ifos_1 + ifos_2)
+        #load spectral density according to the file
+        for ifo in ifos:
+            ifo.power_spectral_density = bilby.gw.detector.PowerSpectralDensity.from_power_spectral_density_file(
+                psd_file=self.config.ASD_file_name+"_PSD"+".txt"
+            )
+            
+        
         return ifos
     
     def _getDataTimeSeries(self,strainI,ifos):

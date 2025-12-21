@@ -2,7 +2,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class MethodConfig:
     sampler:str  = "dynesty"
-    nlive: int   = 800 #800
+    nlive: int   = 500 #800
     dlogz: float = 0.1 #0.1         #stopping criterion for the evidence
     sample: str  = "rslice" #rslice #unif', 'rwalk', 'slice', 'rslice', and 'auto' # performed until the autocorrelation length of the chain can be accurately determined.
     bound: str   = "multi"
