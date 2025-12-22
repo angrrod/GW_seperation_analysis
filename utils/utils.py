@@ -91,7 +91,7 @@ def setUpLoggerScenario(ScenConfig):
     
     #Logger
     bilby.core.utils.setup_logger(
-        log_level="INFO",
+        log_level="DEBUG", #INFO
         label="my_run", 
         outdir="logs",
     )

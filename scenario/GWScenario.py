@@ -28,12 +28,9 @@ class GWScenario:
         """
         self.logger.info("$$$ setting up scenario; generating overlapping waves")
         
-        #load realistic background and PSD
-        asd_f, asd = np.loadtxt(self.config.ASD_file_name+".txt", unpack=True)  
-        psd        = asd**2
-        np.savetxt(self.config.ASD_file_name+"_PSD"+".txt", np.column_stack([asd_f, psd]))
-        
-        self.ifos = self._getInterferrometerSetUp(psd)
+        PSD_CE = self._createPSDFile(self.config.ASD_file_name_CE)
+        PSD_ET = self._createPSDFile(self.config.ASD_file_name_ET)
+        self.ifos = self._getInterferrometerSetUp(PSD_ET,PSD_CE)
         
         #add gaussian noise
         self.ifos.set_strain_data_from_power_spectral_densities(
@@ -65,7 +62,7 @@ class GWScenario:
                 waveform_generator=self.wg,
                 parameters=inject_params
             )
-    def _getInterferrometerSetUp(self,psd):
+    def _getInterferrometerSetUp(self,PSD_ET,PSD_CE):
         #einstein set-up at rhine meuse
         latitude_deg  = 50.85      
         longitude_deg = 5.70    
@@ -73,16 +70,18 @@ class GWScenario:
         
         xarm_azimuth_deg = 0.0
         yarm_azimuth_deg = xarm_azimuth_deg + 60.0
-        
+
+        f_min = self.config.minimum_frequency
+        f_max = self.config.sampling_frequency / 2
         ifos_1 = TriangularInterferometer(
             name="ET",
-            minimum_frequency=self.config.minimum_frequency,   # choose consistently with your waveform and PSD validity
-            maximum_frequency=2048.0,                          # e.g. Nyquist-ish; bilby will also use your strain settings
+            minimum_frequency=f_min,   # choose consistently with your waveform and PSD validity
+            maximum_frequency=f_max,                          # e.g. Nyquist-ish; bilby will also use your strain settings
             length=10.0,    #km                              
             latitude=latitude_deg,
             longitude=longitude_deg,
             elevation=elevation_m,
-            power_spectral_density=psd,
+            power_spectral_density=PSD_ET,
             xarm_azimuth=xarm_azimuth_deg,
             yarm_azimuth=yarm_azimuth_deg
         )
@@ -90,17 +89,15 @@ class GWScenario:
         #CE set-up
         H1 = bilby.gw.detector.get_empty_interferometer("H1")
         L1 = bilby.gw.detector.get_empty_interferometer("L1")
-        for ifo in [H1, L1]:
-            ifo.length = 40.0  # km
         ifos_2 = bilby.gw.detector.InterferometerList([H1, L1])
         
-        ifos = bilby.gw.detector.InterferometerList(ifos_1 + ifos_2)
         #load spectral density according to the file
-        for ifo in ifos:
-            ifo.power_spectral_density = bilby.gw.detector.PowerSpectralDensity.from_power_spectral_density_file(
-                psd_file=self.config.ASD_file_name+"_PSD"+".txt"
-            )
-            
+        for ifo in ifos_2:
+            ifo.power_spectral_density = PSD_CE
+            ifo.length = 40.0 #km
+            ifo.minimum_frequency = f_min
+            ifo.maximum_frequency = f_max
+        ifos = bilby.gw.detector.InterferometerList(ifos_1 + ifos_2)
         
         return ifos
     
@@ -215,7 +212,7 @@ class GWScenario:
             tilt_2              = 0.3,
             phi_12              = 0.2,  #part of the spin of the black hole
             phi_jl              = 0.1,
-            luminosity_distance = 3000.0, #2000
+            luminosity_distance = 5000.0, #2000
             theta_jn            = 0.2, #angle of angular momentum
             psi                 = 2.659,  #angle of polarization
             phase               = 0.9,
@@ -232,7 +229,7 @@ class GWScenario:
         #     tilt_2              = 2.0,
         #     phi_12              = 5.7,  #part of the spin of the black hole
         #     phi_jl              = 1.3,
-        #     luminosity_distance = 3000.0, #2000
+        #     luminosity_distance = 5000.0, #2000
         #     theta_jn            = 1.5, #angle of angular momentum
         #     psi                 = 2.659,  #angle of polarization
         #     phase               = 1.2,
@@ -264,3 +261,13 @@ class GWScenario:
         # chirp mass in solar masses
         chirp = (m1 * m2) ** (3.0 / 5.0) / (m1 + m2) ** (1.0 / 5.0)
         return chirp, q
+    
+    def _createPSDFile(self,ASD_file_name):
+        #load realistic background and PSD
+        asd_f, asd = np.loadtxt(ASD_file_name+".txt", unpack=True)  
+        psd        = asd**2
+        np.savetxt(ASD_file_name+"_PSD"+".txt", np.column_stack([asd_f, psd]))
+        PSD = bilby.gw.detector.PowerSpectralDensity.from_power_spectral_density_file( 
+            psd_file=ASD_file_name +"_PSD"+".txt"
+            )
+        return PSD

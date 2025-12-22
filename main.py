@@ -39,7 +39,8 @@ def Main(run_sampler: bool, method_type):
         runTime                              = end - start
         results[method_type.code]['runTime'] = runTime
         method_meta = {"runTime" : runTime}
-        
+        method.log_inj_likel(method.results["waveFormA"] )
+
         utils.writeMethodResult(data_dir,method_type.code,method_meta,method.results,logger)
         
 def parse_args():
