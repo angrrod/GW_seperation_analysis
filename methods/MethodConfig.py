@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 @dataclass(frozen=True)
 class MethodConfig:
-    nlive: int   = 200 #800
-    dlogz: float = 1 #0.1         #stopping criterion for the evidence
+    sampler:str  = "dynesty"
+    nlive: int   = 100 #800
+    dlogz: float = 5 #0.1         #stopping criterion for the evidence
     sample: str  = "rslice" #rslice #unif', 'rwalk', 'slice', 'rslice', and 'auto' # performed until the autocorrelation length of the chain can be accurately determined.
     bound: str   = "multi"
     walks: int   = None          #steps for MCMC sampeler to select new candidates     

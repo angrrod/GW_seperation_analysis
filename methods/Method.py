@@ -6,7 +6,6 @@ from scenario import GWScenario
 from .MethodConfig import MethodConfig
 from bilby.core.sampler.dynesty import Dynesty, dynesty_stats_plot
 import os
-import shutil
 class Method(ABC):
     def __init__(self,run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig):
 
@@ -15,7 +14,6 @@ class Method(ABC):
         self.logger      = logger
         self.method_type = None
         self.config      = config
-        self.diagOutDir  = "postProcessing/Plots"
         
         #results
         self.results = None
@@ -37,15 +35,11 @@ class Method(ABC):
     def sampeler(self,resume):
         self.logger.info("$$$ Generating posterior samples using nested sampeling dynesty")
         
-        # If we are NOT resuming, we want a clean slate.
-        outdir = "logs/log_ET_dynesty_" + self.method_type.code
-        if not resume and os.path.isdir(outdir):
-            self.logger.warning(f"$$$ Removing existing outdir for fresh run: {outdir}")
-            shutil.rmtree(outdir)
-            
-        sampler = Dynesty(
+        clean = not resume
+        sample = bilby.run_sampler(
             likelihood = self.likelihood(),
             priors     = self.getPrior(),
+            sampler    = self.config.sampler,
             nlive      = self.config.nlive, 
             dlogz      = self.config.dlogz, #stopping criterion for the evidence
             sample     = self.config.sample,  
@@ -54,19 +48,13 @@ class Method(ABC):
             maxmcmc    = self.config.maxmcmc,
             nact       = self.config.nact, #amount of steps is tuned so autocorr is small enough 
             resume     = resume,
-            outdir     = outdir,
+            clean      = clean,
+            outdir     = "logs/log_ET_dynesty_" + self.method_type.code,
             label      = self.method_type.code,
             npool      = self.config.npool,
             queue_size = self.config.npool
         )
-        result = sampler.run_sampler()
-        
-        #store diagnostics plot
-        fig, _   = dynesty_stats_plot(sampler)
-        fileName = "sampler_diagnostics"
-        path     = os.path.join(self.diagOutDir, f"{fileName}.png")
-        fig.savefig(path, dpi=300, bbox_inches="tight")
-        return result
+        return sample
     
     def generateSamples(self):
         self.logger.info("$$$ run the samples")

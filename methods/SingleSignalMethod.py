@@ -6,6 +6,7 @@ from scenario import GWScenario
 from bilby.core.sampler.dynesty import Dynesty, dynesty_stats_plot
 import os
 import shutil
+from dynesty.plotting import runplot
 class SingleSignalMethod(Method):
     def __init__(self, run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig):
         super().__init__( run_sampler, scenario, logger, config)
@@ -16,13 +17,11 @@ class SingleSignalMethod(Method):
         #adapt the prior
         self.logger.info("$$$ Generating posterior samples using nested sampeling dynesty for single signal")
         prior = self.GetSinglePrior()
-        outdir = "logs/log_ET_dynesty_" + self.method_type.code + self.nameExtra
-        if not resume and os.path.isdir(outdir):
-            self.logger.warning(f"$$$ Removing existing outdir for fresh run: {outdir}")
-            shutil.rmtree(outdir)
-        sampler = Dynesty(
+        clean = not resume
+        sample = bilby.run_sampler(
             likelihood = self.likelihood(),
             priors     = prior,
+            sampler    = self.config.sampler,
             nlive      = self.config.nlive, 
             dlogz      = self.config.dlogz, #stopping criterion for the evidence
             sample     = self.config.sample,  
@@ -31,19 +30,13 @@ class SingleSignalMethod(Method):
             maxmcmc    = self.config.maxmcmc,
             nact       = self.config.nact, #amount of steps is tuned so autocorr is small enough 
             resume     = resume,
-            outdir     = outdir,
+            clean      = clean,
+            outdir     = "logs/log_ET_dynesty_" + self.method_type.code + self.nameExtra,
             label      = self.method_type.code,
             npool      = self.config.npool,
             queue_size = self.config.npool
         )
-        result = sampler.run_sampler()
-        
-        #store diagnostics plot
-        fig, _   = dynesty_stats_plot(sampler)
-        fileName = "sampler_diagnostics"
-        path     = os.path.join(self.diagOutDir, f"{fileName}.png")
-        fig.savefig(path, dpi=300, bbox_inches="tight")
-        return result
+        return sample
     
     def log_inj_likel(self,result):
         #debug funciton
