@@ -11,7 +11,8 @@ import argparse
 ####     Main Loop     ####
 ###########################
 
-def Main(run_sampler: bool, method_type):
+def Main(run_sampler: bool, method_type,start_from_chekpt = False):
+    #start_from_chekpt only used for continuing when crash,has happend
     """_summary_
     Args:
         run_sampler (bool): Describes if the sampler should be run from scratch, performing an entire sampeling run.
@@ -31,7 +32,7 @@ def Main(run_sampler: bool, method_type):
         raise ValueError(f"Unknown method '{method_type}'")
     else:
         logger.info(f"$$$ Running method: {method_type.code}")
-        method  = method_type.method(run_sampler,scenario,logger,MethodConf)
+        method  = method_type.method(run_sampler,scenario,logger,MethodConf,start_from_chekpt)
         
         start                                = time.process_time() #in seconds
         method.generateSamples()
@@ -39,7 +40,7 @@ def Main(run_sampler: bool, method_type):
         runTime                              = end - start
         results[method_type.code]['runTime'] = runTime
         method_meta = {"runTime" : runTime}
-        method.log_inj_likel(method.results["waveFormA"] )
+        method.log_diagnostic_tests(method.results["waveFormA"] )
 
         utils.writeMethodResult(data_dir,method_type.code,method_meta,method.results,logger)
         

@@ -1,15 +1,13 @@
 import bilby
-from bilby.gw.detector import get_empty_interferometer, InterferometerList
 import copy
 from .Method import Method
 from .MethodConfig import MethodConfig
 from .Method_type import Method_type
 from .SingleSignalMethod import SingleSignalMethod
 from scenario import GWScenario
-import os
 class HyrarchicalMethod(Method):
-    def __init__(self,run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig):
-        super().__init__(run_sampler, scenario, logger, config)
+    def __init__(self,run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig,start_from_chekpt):
+        super().__init__(run_sampler, scenario, logger, config,start_from_chekpt)
         self.method_type     = Method_type.HIERARCHICAL
         self.singleSampler   = SingleSignalMethod(True, scenario, logger,config) #run_sampler to true so that we always generate a new sample instead of using the one from the single method
         self.singleSampler.nameExtra = "1" 
@@ -18,17 +16,10 @@ class HyrarchicalMethod(Method):
     def generateSamples(self):
         self.logger.info("$$$ generate Samples for hyrarchical model")
         self.singleSampler.generateSamples()
-        resultsSampleA     = copy.deepcopy(self.singleSampler.results["waveFormA"])
+        resultsSampleA       = copy.deepcopy(self.singleSampler.results["waveFormA"])
         MLPosteriorA         = self._getMaximumLikelihood(resultsSampleA)
-        pols                 = self.scenario.wg.frequency_domain_strain(MLPosteriorA) #returns cross and plus waveform
-        second_wave_ifos     = []
-        for ifo in self.scenario.ifos:
-            h_fd                 = ifo.get_detector_response(pols, MLPosteriorA)
-            d_fd                 = ifo.strain_data.frequency_domain_strain
-            res_fd               = d_fd - h_fd
-            second_wave_ifo      = self._GetIfoResidual(res_fd,ifo)
-            second_wave_ifos.append(second_wave_ifo)
-        self.second_wave_ifos = InterferometerList(second_wave_ifos)
+        
+        self.second_wave_ifos = self.getResidualIfos(MLPosteriorA)
         
         self.scenario.makePlots(["strain_time_domain_set_up_hyrarchical","qtransform_set_up_hyrarchical"],"",self.second_wave_ifos)
         super().generateSamples()
@@ -53,19 +44,6 @@ class HyrarchicalMethod(Method):
             # time_reference="H1",
         )
         return likelihood
-
-    def _GetIfoResidual(self,res_fd,ifo):
-        self.logger.info("$$$ get residual interferrometer")
-        #build copy for second interferrometer
-        new_ifo = get_empty_interferometer(ifo.name)
-        new_ifo.set_strain_data_from_frequency_domain_strain(
-            frequency_domain_strain = res_fd,
-            sampling_frequency      = ifo.strain_data.sampling_frequency,
-            duration                = ifo.strain_data.duration,
-            start_time              = ifo.strain_data.start_time,
-        )
-        new_ifo.power_spectral_density = ifo.power_spectral_density
-        return new_ifo
     
     def getPrior(self):
         return self.GetSinglePrior()

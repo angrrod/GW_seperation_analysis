@@ -100,6 +100,18 @@ def setUpLoggerScenario(ScenConfig):
     
     scenario       = GWScenario(logger, ScenConfig)
     scenario.setUpScenario()
+    
+    #test ifo's
+    for ifo in scenario.ifos:
+        td = ifo.strain_data.time_domain_strain
+        scenario.logger.info(f"{ifo.name}: td finite={np.isfinite(td).all()}, std={np.std(td):.3e}, maxabs={np.max(np.abs(td)):.3e}")
+
+        fd = ifo.strain_data.frequency_domain_strain
+        scenario.logger.info(f"{ifo.name}: fd finite={np.isfinite(fd).all()}, std={np.std(fd):.3e}")
+
+        psd = ifo.power_spectral_density.psd_array
+        scenario.logger.info(f"{ifo.name}: psd finite={np.isfinite(psd).all()}, min={np.min(psd):.3e}, max={np.max(psd):.3e}")
+
     return scenario,logger,plot_dir,out_dir
 
 def writeMethodResult(path,method_name,method_meta,waveform_results,logger):

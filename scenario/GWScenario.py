@@ -152,7 +152,7 @@ class GWScenario:
 
         # Whitened signal (red, more prominent)
         ax.plot(white_zoom.times, white_zoom.value,
-                color="red", alpha=0.1, lw=1.2, label="full signal")
+                color="red", alpha=0.2, lw=1.2, label="full signal")
         # Raw data (grey, semi-transparent)
         ax.plot(white_zoom.times, raw_scaled,
                 color="black", alpha=1, lw=1, label="signal")

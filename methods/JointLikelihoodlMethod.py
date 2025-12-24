@@ -6,8 +6,8 @@ from .Method_type import Method_type
 from scenario import GWScenario
 
 class JointLikelihoodlMethod(Method):
-    def __init__(self,run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig):
-        super().__init__(run_sampler, scenario, logger, config)
+    def __init__(self,run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig,start_from_chekpt):
+        super().__init__(run_sampler, scenario, logger, config,start_from_chekpt)
         self.method_type = Method_type.JOINT
         
     def likelihood(self):
