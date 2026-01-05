@@ -218,3 +218,4 @@ External/*
 out/*
 !out/results.json
 .vscode
+logs

@@ -6,7 +6,7 @@ from scenario import GWScenario
 from .MethodConfig import MethodConfig
 import numpy as np
 from bilby.gw.detector import InterferometerList
-
+from bilby.core.prior import DeltaFunction
 class Method(ABC):
     def __init__(self,run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig,start_from_chekpt):
 
@@ -16,20 +16,38 @@ class Method(ABC):
         self.method_type       = None
         self.config            = config
         self.start_from_chekpt = start_from_chekpt
-        #results
-        self.results = None
+        self.results           = None
+        self.prior             = self.getPrior()
+        self.likelihood        = self.getLikelihood()
     
-    def likelihood(self):
+    def getLikelihood(self, ifos_override=None):
         self.logger.info("$$$ get a single likelihood signal")
-        likelihood = bilby.gw.GravitationalWaveTransient(
-            interferometers          = self.scenario.ifos,
-            waveform_generator       = self.scenario.wg,
-            priors                   = self.getPrior(),
-            distance_marginalization = False,
-            phase_marginalization    = False,
+        #allow to overwride the IFOS for debugging/testing reasons
+        if ifos_override is None:
+            ifos = self.scenario.ifos
+        else:
+            # Ensure bilby receives an InterferometerList (works with list slices too)
+            if isinstance(ifos_override, InterferometerList):
+                ifos = ifos_override
+            else:
+                ifos = InterferometerList(ifos_override)
+        
+        priors = self.prior
+        if priors is None:
+            raise NotImplementedError("prior is not implemented")
+        
+        fiducial_parameters = self.scenario.injct_params_waves[0].copy()
+        fiducial_parameters["time_jitter"] = 0.0
+        likelihood = bilby.gw.likelihood.RelativeBinningGravitationalWaveTransient(  #GravitationalWaveTransient
+            interferometers          = ifos,
+            waveform_generator       = self.scenario.wg_rel,
+            priors                   = priors,
+            fiducial_parameters      = fiducial_parameters,
+            update_fiducial_parameters=True,
+            distance_marginalization = True,
+            phase_marginalization    = True,
             time_marginalization     = False,
-            # reference_frame="H1L1", #depends on the detector config -> ok?
-            # time_reference="H1",
+            jitter_time              = False
         )
         return likelihood
     
@@ -41,9 +59,13 @@ class Method(ABC):
         else:
             clean = False
             
+        priors = self.prior()
+        if priors is None:
+            raise NotImplementedError("prior is not implemented")
+        
         sample = bilby.run_sampler(
-            likelihood = self.likelihood(),
-            priors     = self.getPrior(),
+            likelihood = self.likelihood,
+            priors     = priors,
             sampler    = self.config.sampler,
             nlive      = self.config.nlive, 
             dlogz      = self.config.dlogz, #stopping criterion for the evidence
@@ -72,7 +94,7 @@ class Method(ABC):
         self.results = {"waveFormA" : result} #result object
         
     ###   priors   ###
-    def GetSinglePrior(self):
+    def GetSinglePrior(self,waveformIdx = 0):
         self.logger.info("$$$ getting a waveform prior")
         prior = bilby.gw.prior.BBHPriorDict()  #allow for default ranges in ET
         if "geocent_time" not in prior:
@@ -83,10 +105,10 @@ class Method(ABC):
                 name="geocent_time",
             )
         prior["chirp_mass"] = bilby.core.prior.Uniform(
-            minimum=4, maximum=200, name="chirp_mass"
+            minimum=4, maximum=50, name="chirp_mass"
         )
         prior["mass_ratio"] = bilby.core.prior.Uniform(
-            minimum=0.1, maximum=1, name="mass_ratio"
+            minimum=0.4, maximum=0.9, name="mass_ratio"  #TODO: set max to 1 and min to 0.1
         )
         prior["luminosity_distance"] = bilby.gw.prior.UniformSourceFrame(
             minimum=1e3,      
@@ -96,6 +118,15 @@ class Method(ABC):
             latex_label='$d_L$',
             unit='Mpc'
         )
+        
+        ### fix priors for debugging
+        # fixed_priors   = ["tilt_1", "tilt_2", "phi_12", "phi_jl", "a_1", "a_2"]
+        # waveFormParams = self.scenario.GetWaveFormParams()
+        # for k in fixed_priors:
+        #     if k in prior:
+        #         self.logger.info(f"$$$ : making prior delta {k}")
+        #         value = waveFormParams[waveformIdx].get(k)
+        #         prior[k] = DeltaFunction(value, name=k)
         
         return prior
     
@@ -111,10 +142,6 @@ class Method(ABC):
             priors[f"{key}_B"] = copy.deepcopy(prior)
 
         return priors
-    
-    @abstractmethod
-    def getPrior(self):
-        pass
 
     def _getMaximumLikelihood(self,result):
         posterior = result.posterior
@@ -131,9 +158,9 @@ class Method(ABC):
             h_fd                 = ifo.get_detector_response(pols, MLPosteriorA)
             d_fd                 = ifo.strain_data.frequency_domain_strain
             res_fd               = d_fd - h_fd
-            second_wave_ifo      = self._clone_ifo_with_new_fd_strain(res_fd,ifo)
+            second_wave_ifo      = self._clone_ifo_with_new_fd_strain(ifo,res_fd)
             second_wave_ifos.append(second_wave_ifo)
-        return InterferometerList(second_wave_ifo)
+        return InterferometerList(second_wave_ifos)
     
     def _clone_ifo_with_new_fd_strain(self, ifo, new_fd):
         """
@@ -152,3 +179,7 @@ class Method(ABC):
         new_ifo.strain_data.frequency_domain_strain = np.array(new_fd, copy=True)
 
         return new_ifo
+    
+    @abstractmethod
+    def getPrior(self):
+        pass

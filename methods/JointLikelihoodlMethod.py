@@ -9,6 +9,7 @@ class JointLikelihoodlMethod(Method):
     def __init__(self,run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig,start_from_chekpt):
         super().__init__(run_sampler, scenario, logger, config,start_from_chekpt)
         self.method_type = Method_type.JOINT
+        self.prior = self.getJointPriors()
         
     def likelihood(self):
         #adapt both prior and likelihood for joint modelling
@@ -22,7 +23,7 @@ class JointLikelihoodlMethod(Method):
             waveform_generator = wg_rb,
             ref_injection      = ref_injection, # actual parameters in simulation, ML for actual data, this is the FUDICIAL waveform used in the RB scheme
             N_overlaps         = 2,
-            priors             = self.getPrior(),
+            priors             = self.prior,
             reference_frame    = "sky",
             time_reference     = "geocenter",
             delta              = 0.03,  # RB binning tolerance

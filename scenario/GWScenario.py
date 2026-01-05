@@ -54,6 +54,15 @@ class GWScenario:
             waveform_arguments={k: v for k, v in asdict(self.config).items() if k in {"waveform_approximant","minimum_frequency","reference_frequency"
         }}  #remove redundant variables
         )
+        self.wg_rel = bilby.gw.waveform_generator.WaveformGenerator(
+            duration=self.config.duration,
+            sampling_frequency=self.config.sampling_frequency,
+            frequency_domain_source_model=bilby.gw.source.lal_binary_black_hole_relative_binning,
+            parameter_conversion=bilby.gw.conversion.convert_to_lal_binary_black_hole_parameters,
+            waveform_arguments={k: v for k, v in asdict(self.config).items() if k in {"waveform_approximant","minimum_frequency","reference_frequency"
+        }}  #remove redundant variables
+        )
+
         
         #inject N waves
         self.logger.info("$$$ injecting " + str(len(self.injct_params_waves)) + " waves")
@@ -62,6 +71,16 @@ class GWScenario:
                 waveform_generator=self.wg,
                 parameters=inject_params
             )
+        converted = self.wg.parameter_conversion(inject_params.copy())
+        for k in [
+            "mass_1", "mass_2",
+            "chirp_mass", "mass_ratio",
+            "luminosity_distance",
+            "theta_jn", "inclination",
+            "phase", "coa_phase",
+            "geocent_time"]: 
+            if k in converted[0]:
+                self.logger.info(f"$$$ {k}, {converted[0].get(k)}")
     def _getInterferrometerSetUp(self,PSD_ET,PSD_CE):
         #einstein set-up at rhine meuse
         latitude_deg  = 50.85      
@@ -206,12 +225,12 @@ class GWScenario:
         injct_params_wave_1 = dict(
             chirp_mass          = chirp_1,
             mass_ratio          = q_1,
-            a_1                 = 0.6,  #part of the spin of the black hole
-            a_2                 = 0.1,
-            tilt_1              = 0.5, #part of the spin of the black hole
-            tilt_2              = 0.3,
-            phi_12              = 0.2,  #part of the spin of the black hole
-            phi_jl              = 0.1,
+            a_1                 = 0.0,  #part of the spin of the black hole
+            a_2                 = 0.0,
+            tilt_1              = 1e-6, #part of the spin of the black hole
+            tilt_2              = 1e-6,
+            phi_12              = 1e-6,  #part of the spin of the black hole
+            phi_jl              = 1e-6,
             luminosity_distance = 5000.0, #2000
             theta_jn            = 0.2, #angle of angular momentum
             psi                 = 2.659,  #angle of polarization

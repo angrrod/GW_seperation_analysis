@@ -15,12 +15,12 @@ def Main():
     params = [
         "chirp_mass",
         "mass_ratio", 
-        "luminosity_distance",
         "psi",
-        "phase",
-        "geocent_time",
-        # "ra",
-        # "dec"
+        # "phase",
+        # "geocent_time",
+        # "luminosity_distance",
+        "ra",
+        "dec"
         ] #,"mass_ratio","luminosity_distance"
     truths = scenario.GetWaveFormParams()
     truths = [[d[k] for k in params if k in d] for d in truths]  #get params to be plotted in corner plot

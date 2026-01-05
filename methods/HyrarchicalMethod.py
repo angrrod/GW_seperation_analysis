@@ -30,9 +30,9 @@ class HyrarchicalMethod(Method):
         }
         
         
-    def likelihood(self):
+    def getLikelihood(self):
         self.logger.info("$$$ get likelihood sgnal for custom ifo")
-        prior = self.GetSinglePrior()
+        prior = self.prior
         likelihood = bilby.gw.GravitationalWaveTransient(
             interferometers          = self.second_wave_ifos,
             waveform_generator       = self.scenario.wg,
@@ -46,4 +46,4 @@ class HyrarchicalMethod(Method):
         return likelihood
     
     def getPrior(self):
-        return self.GetSinglePrior()
+        return self.GetSinglePrior() 
