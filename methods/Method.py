@@ -7,6 +7,7 @@ from .MethodConfig import MethodConfig
 import numpy as np
 from bilby.gw.detector import InterferometerList
 from bilby.core.prior import DeltaFunction
+from bilby.gw.conversion import generate_posterior_samples_from_marginalized_likelihood
 class Method(ABC):
     def __init__(self,run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig,start_from_chekpt):
 
@@ -46,7 +47,7 @@ class Method(ABC):
             update_fiducial_parameters=True,
             distance_marginalization = True,
             phase_marginalization    = True,
-            time_marginalization     = False,
+            time_marginalization     = True,
             jitter_time              = False
         )
         return likelihood
@@ -91,8 +92,19 @@ class Method(ABC):
         else:
             outdir = "logs/log_ET_dynesty_" + self.method_type.code + "/" + self.method_type.code + "_result.json"
             result = read_in_result(outdir) #outdir is also used in sampeler 
-        self.results = {"waveFormA" : result} #result object
         
+        self.UpdateMargPosterior(result)
+        self.results = {"waveFormA" : result} #result object
+
+    def UpdateMargPosterior(self,result):
+        result.posterior = generate_posterior_samples_from_marginalized_likelihood(
+            samples=result.posterior,      # what you read from HDF5
+            likelihood=self.likelihood,     # rebuilt likelihood with marg flags enabled
+            npool=18,                  # match your compute setting if you like
+            block=50,
+            use_cache=True,
+        )
+
     ###   priors   ###
     def GetSinglePrior(self,waveformIdx = 0):
         self.logger.info("$$$ getting a waveform prior")
@@ -108,18 +120,18 @@ class Method(ABC):
             minimum=4, maximum=50, name="chirp_mass"
         )
         prior["mass_ratio"] = bilby.core.prior.Uniform(
-            minimum=0.4, maximum=0.9, name="mass_ratio"  #TODO: set max to 1 and min to 0.1
+            minimum=0.1, maximum=1, name="mass_ratio" 
         )
         prior["luminosity_distance"] = bilby.gw.prior.UniformSourceFrame(
             minimum=1e3,      
-            maximum=1e5,      
+            maximum=1e4, #1e5      
             cosmology='Planck15',
             name='luminosity_distance',
             latex_label='$d_L$',
             unit='Mpc'
         )
         
-        ### fix priors for debugging
+        ### WJ: 04/01/25 fix priors for debugging
         # fixed_priors   = ["tilt_1", "tilt_2", "phi_12", "phi_jl", "a_1", "a_2"]
         # waveFormParams = self.scenario.GetWaveFormParams()
         # for k in fixed_priors:
@@ -130,7 +142,7 @@ class Method(ABC):
         
         return prior
     
-    #needed for joint parameter estimation
+    # needed for joint parameter estimation
     # independent priors for both
     def getJointPriors(self):
         self.logger.info("$$$ getting joint priors")

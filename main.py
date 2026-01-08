@@ -5,13 +5,14 @@ from methods import Method_type, MethodConfig
 import utils
 from scenario import ScenarioConfig
 import argparse
+import multiprocessing as mp
 
 
 ###########################
 ####     Main Loop     ####
 ###########################
 
-def Main(run_sampler: bool, method_type,start_from_chekpt = False):
+def Main(run_sampler: bool, method_type,start_from_chekpt = True):
     #start_from_chekpt only used for continuing when crash,has happend
     """_summary_
     Args:
@@ -41,7 +42,6 @@ def Main(run_sampler: bool, method_type,start_from_chekpt = False):
         results[method_type.code]['runTime'] = runTime
         method_meta = {"runTime" : runTime}
         method.log_diagnostic_tests(method.results["waveFormA"] )
-
         utils.writeMethodResult(data_dir,method_type.code,method_meta,method.results,logger)
         
 def parse_args():
@@ -77,5 +77,8 @@ def parse_method_type(s: str) -> Method_type:
 ###########################
 
 if __name__ == "__main__":
+    #TODO: remove
+    # mp.set_start_method("spawn", force=True)
     args = parse_args()
-    Main(args.run_sampler,args.method)
+    start_from_chekpt = False
+    Main(args.run_sampler,args.method,start_from_chekpt)

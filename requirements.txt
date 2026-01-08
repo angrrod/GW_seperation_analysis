@@ -1,0 +1,20 @@
+# Core numerical stack
+numpy>=1.22
+scipy>=1.9
+
+# Gravitational-wave inference
+bilby>=2.2
+lalsuite>=7.0
+gwpy>=3.0
+dynesty>=2.1
+
+# Plotting and diagnostics
+matplotlib>=3.6
+corner>=2.2
+
+# Data handling
+pandas>=1.5
+h5py>=3.8
+
+# Utilities
+tqdm>=4.64

@@ -16,9 +16,9 @@ def Main():
         "chirp_mass",
         "mass_ratio", 
         "psi",
-        # "phase",
-        # "geocent_time",
-        # "luminosity_distance",
+        "phase",
+        "geocent_time",
+        "luminosity_distance",
         "ra",
         "dec"
         ] #,"mass_ratio","luminosity_distance"

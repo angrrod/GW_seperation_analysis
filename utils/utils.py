@@ -85,7 +85,14 @@ def addSuffixes(strings):
 
 def setUpLoggerScenario(ScenConfig):
     #set-up plotting dirs
-    out_dir = "postProcessing"
+    if "VSC_DATA" in os.environ:
+        base    = os.environ.get("GW_INP_DIR", os.environ["VSC_DATA"])
+        out_dir = os.path.join(base,"postProcessing")
+        log_dir = os.path.join(base,"logs")
+    else:
+        out_dir = "postProcessing"
+        log_dir = "logs"
+    
     plot_dir = os.path.join(out_dir, "Plots")
     os.makedirs(plot_dir, exist_ok=True)
     
@@ -93,12 +100,12 @@ def setUpLoggerScenario(ScenConfig):
     bilby.core.utils.setup_logger(
         log_level="INFO", #DEBUG
         label="my_run", 
-        outdir="logs",
+        outdir=log_dir,
     )
     logger = bilby.core.utils.logger
     logger.info("$$$ start_run")
     
-    scenario       = GWScenario(logger, ScenConfig)
+    scenario = GWScenario(logger, ScenConfig)
     scenario.setUpScenario()
     
     #test ifo's
@@ -156,8 +163,10 @@ def readMethodPosteriorInfo(store, method_name,logger):
     for wf in ("waveFormA", "waveFormB"):
         key = f"/methods/{method_name}/posterior/{wf}"
         if key in store:
+            waveformDict = {}
             posteriors[wf]  = store[key]
-            diagnostics['methodInfo'] = readMetaData(store,key,'information_gain',logger)
+            waveformDict['information_gain'] = readMetaData(store,key,'information_gain',logger)
+            diagnostics[wf] = waveformDict
     return posteriors, diagnostics
 
 def readMetaData(store,key,attribute,logger):

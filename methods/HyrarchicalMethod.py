@@ -23,7 +23,7 @@ class HyrarchicalMethod(Method):
         
         self.scenario.makePlots(["strain_time_domain_set_up_hyrarchical","qtransform_set_up_hyrarchical"],"",self.second_wave_ifos)
         super().generateSamples()
-        resultsSampleB     = self.results['waveFormA']
+        resultsSampleB     = self.results['waveFormA'] #if we marginalize, the resampeling of the general posterior has been done via generateSamples() in the super class. 
         self.results = {
             "waveFormA" : resultsSampleA,
             "waveFormB" : resultsSampleB

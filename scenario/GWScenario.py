@@ -28,8 +28,9 @@ class GWScenario:
         """
         self.logger.info("$$$ setting up scenario; generating overlapping waves")
         
-        PSD_CE = self._createPSDFile(self.config.ASD_file_name_CE)
-        PSD_ET = self._createPSDFile(self.config.ASD_file_name_ET)
+        PSD_CE = self.load_psd(self.config.ASD_file_name_CE +"_PSD.txt")
+        PSD_ET = self.load_psd(self.config.ASD_file_name_ET +"_PSD.txt")
+            
         self.ifos = self._getInterferrometerSetUp(PSD_ET,PSD_CE)
         
         #add gaussian noise
@@ -281,12 +282,18 @@ class GWScenario:
         chirp = (m1 * m2) ** (3.0 / 5.0) / (m1 + m2) ** (1.0 / 5.0)
         return chirp, q
     
-    def _createPSDFile(self,ASD_file_name):
-        #load realistic background and PSD
-        asd_f, asd = np.loadtxt(ASD_file_name+".txt", unpack=True)  
-        psd        = asd**2
-        np.savetxt(ASD_file_name+"_PSD"+".txt", np.column_stack([asd_f, psd]))
-        PSD = bilby.gw.detector.PowerSpectralDensity.from_power_spectral_density_file( 
-            psd_file=ASD_file_name +"_PSD"+".txt"
+    def load_psd(self,psd_name):
+        # 1) Try HPC path
+        base_path = os.environ.get("GW_INP_DIR")
+        hpc_path  = os.path.join(base_path, psd_name)
+        try:
+            return bilby.gw.detector.PowerSpectralDensity.from_power_spectral_density_file(
+                psd_file=hpc_path
             )
-        return PSD
+        except FileNotFoundError:
+            # 2) Fall back to local directory
+            return bilby.gw.detector.PowerSpectralDensity.from_power_spectral_density_file(
+                psd_file=psd_name
+            )
+    
+

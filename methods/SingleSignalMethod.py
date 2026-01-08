@@ -160,10 +160,11 @@ class SingleSignalMethod(Method):
             "mass_ratio": 1e-3,
             "luminosity_distance": 1e-3,
         }
-
-        self._probe_local_logl(like, theta_inj, params, rel_scales, n=200, seed=1)
-        self._probe_local_logl(like, theta_ml,  params, rel_scales, n=200, seed=2)
         
+        for i in range(10):
+            self._probe_local_logl(like, theta_inj, params, rel_scales, n=200, seed=i+1)
+
+
     def _eval_logL_for_ifos(self, ifos_subset, theta):
         like = self.getLikelihood(ifos_override=ifos_subset)  # you may need to implement this override
         theta = {k: v for k, v in theta.items() if k in like.priors}
