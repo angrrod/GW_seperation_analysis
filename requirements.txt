@@ -1,5 +1,5 @@
 # Core numerical stack
-numpy>=1.22
+numpy==2.3.4,<2.4
 scipy>=1.9
 
 # Gravitational-wave inference
@@ -18,3 +18,4 @@ h5py>=3.8
 
 # Utilities
 tqdm>=4.64
+tables>=3.9

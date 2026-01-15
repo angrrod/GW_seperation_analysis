@@ -41,7 +41,8 @@ def Main(run_sampler: bool, method_type,start_from_chekpt = True):
         runTime                              = end - start
         results[method_type.code]['runTime'] = runTime
         method_meta = {"runTime" : runTime}
-        method.log_diagnostic_tests(method.results["waveFormA"] )
+        if method_type == Method_type.SINGLE:
+            method.log_diagnostic_tests(method.results["waveFormA"] )
         utils.writeMethodResult(data_dir,method_type.code,method_meta,method.results,logger)
         
 def parse_args():

@@ -1,5 +1,5 @@
 import bilby
-from jointRB.JointLikelihoodRB import OverlappingSignalsRelBinning
+from jointRB import OverlappingSignalsRelBinning
 from .Method import Method
 from .MethodConfig import MethodConfig
 from .Method_type import Method_type
@@ -9,9 +9,8 @@ class JointLikelihoodlMethod(Method):
     def __init__(self,run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig,start_from_chekpt):
         super().__init__(run_sampler, scenario, logger, config,start_from_chekpt)
         self.method_type = Method_type.JOINT
-        self.prior = self.getJointPriors()
         
-    def likelihood(self):
+    def getLikelihood(self):
         #adapt both prior and likelihood for joint modelling
         self.logger.info("$$$ get the joint likelihood signal")
         waveform_parms = self.scenario.GetWaveFormParams()
@@ -39,9 +38,19 @@ class JointLikelihoodlMethod(Method):
             duration                      = self.scenario.wg.duration,
             sampling_frequency            = self.scenario.wg.sampling_frequency,
             frequency_domain_source_model = bilby.gw.source.lal_binary_black_hole,  #jrb_lal_binary_black_hole self.scenario.wg.frequency_domain_source_model
+            parameter_conversion          = bilby.gw.conversion.convert_to_lal_binary_black_hole_parameters,
             waveform_arguments            = self.scenario.wg.waveform_arguments.copy()
         )
         return wg_rb
     
+    def updateResults(self,result):
+        self.UpdateMargPosterior(result)
+        posterior    = result.posterior
+        resultA      = posterior.loc[:, posterior.columns.str.endswith("_A")]
+        resultB      = posterior.loc[:, posterior.columns.str.endswith("_B")]
+        resultA      = resultA.rename(columns=lambda c: c[:-2])
+        resultB      = resultB.rename(columns=lambda c: c[:-2])
+        self.results = {"waveFormA" : resultA,"waveFormB" : resultB}
+        
     def getPrior(self):
         return self.getJointPriors()

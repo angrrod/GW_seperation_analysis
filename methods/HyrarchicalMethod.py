@@ -8,10 +8,12 @@ from scenario import GWScenario
 class HyrarchicalMethod(Method):
     def __init__(self,run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig,start_from_chekpt):
         super().__init__(run_sampler, scenario, logger, config,start_from_chekpt)
-        self.method_type     = Method_type.HIERARCHICAL
-        self.singleSampler   = SingleSignalMethod(True, scenario, logger,config) #run_sampler to true so that we always generate a new sample instead of using the one from the single method
+        self.method_type             = Method_type.HIERARCHICAL
+        self.singleSampler           = SingleSignalMethod(True, scenario, logger,config,start_from_chekpt = False) #run_sampler to true so that we always generate a new sample instead of using the one from the single method
         self.singleSampler.nameExtra = "1" 
-        self.second_wave_ifos = self.scenario.ifos
+        self.second_wave_ifos        = self.scenario.ifos
+        # (1) update the likelihood to have the second ifos
+        self.likelihood              = self.getLikelihood() 
         
     def generateSamples(self):
         self.logger.info("$$$ generate Samples for hyrarchical model")
@@ -29,19 +31,23 @@ class HyrarchicalMethod(Method):
             "waveFormB" : resultsSampleB
         }
         
-        
     def getLikelihood(self):
         self.logger.info("$$$ get likelihood sgnal for custom ifo")
         prior = self.prior
-        likelihood = bilby.gw.GravitationalWaveTransient(
+        if not hasattr(self, "second_wave_ifos"):
+            return None # we will update the likelihood in this object not in the super class object. see (1)
+        fiducial_parameters = self.scenario.injct_params_waves[0].copy()
+        fiducial_parameters["time_jitter"] = 0.0
+        likelihood = bilby.gw.likelihood.RelativeBinningGravitationalWaveTransient(
             interferometers          = self.second_wave_ifos,
-            waveform_generator       = self.scenario.wg,
+            waveform_generator       = self.scenario.wg_rel,
             priors                   = prior,
+            fiducial_parameters      = fiducial_parameters,
+            update_fiducial_parameters=True,
             distance_marginalization = False,
-            phase_marginalization    = False,
-            time_marginalization     = False,
-            # reference_frame="H1L1", #depends on the detector config -> ok?
-            # time_reference="H1",
+            phase_marginalization    = True,
+            time_marginalization     = True,
+            jitter_time              = False
         )
         return likelihood
     

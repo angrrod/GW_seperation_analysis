@@ -52,6 +52,7 @@ class GWScenario:
             duration=self.config.duration,
             sampling_frequency=self.config.sampling_frequency,
             frequency_domain_source_model=lal_binary_black_hole,
+            parameter_conversion=bilby.gw.conversion.convert_to_lal_binary_black_hole_parameters,
             waveform_arguments={k: v for k, v in asdict(self.config).items() if k in {"waveform_approximant","minimum_frequency","reference_frequency"
         }}  #remove redundant variables
         )
@@ -83,10 +84,11 @@ class GWScenario:
             if k in converted[0]:
                 self.logger.info(f"$$$ {k}, {converted[0].get(k)}")
     def _getInterferrometerSetUp(self,PSD_ET,PSD_CE):
-        #einstein set-up at rhine meuse
+        
+        #Einstein telescope set-up at rhine meuse
         latitude_deg  = 50.85      
         longitude_deg = 5.70    
-        elevation_m   = 100.0   #altitde of detector
+        elevation_m   = 100.0   #altitude of detector
         
         xarm_azimuth_deg = 0.0
         yarm_azimuth_deg = xarm_azimuth_deg + 60.0
@@ -96,8 +98,8 @@ class GWScenario:
         ifos_1 = TriangularInterferometer(
             name="ET",
             minimum_frequency=f_min,   # choose consistently with your waveform and PSD validity
-            maximum_frequency=f_max,                          # e.g. Nyquist-ish; bilby will also use your strain settings
-            length=10.0,    #km                              
+            maximum_frequency=f_max,   # e.g. Nyquist-ish; bilby will also use your strain settings
+            length=10.0,               # km                              
             latitude=latitude_deg,
             longitude=longitude_deg,
             elevation=elevation_m,
@@ -106,12 +108,12 @@ class GWScenario:
             yarm_azimuth=yarm_azimuth_deg
         )
         
-        #CE set-up
+        # CE set-up
         H1 = bilby.gw.detector.get_empty_interferometer("H1")
         L1 = bilby.gw.detector.get_empty_interferometer("L1")
         ifos_2 = bilby.gw.detector.InterferometerList([H1, L1])
         
-        #load spectral density according to the file
+        # Load spectral density according to the file
         for ifo in ifos_2:
             ifo.power_spectral_density = PSD_CE
             ifo.length = 40.0 #km
@@ -131,7 +133,7 @@ class GWScenario:
             ts: original timeseries with noise + signal
             ts_noise: timeseries noise 
         """
-        #use default scenario based ifo's
+        # Use default scenario based ifo's
         if ifos is None:
             ifos = self.ifos
             
@@ -140,7 +142,7 @@ class GWScenario:
         t0 = ifos[strainI].strain_data.start_time                  # GPS start time (float)
         fs = self.config.sampling_frequency
 
-        #convert data
+        # Convert data
         ts       = TimeSeries(td, sample_rate=fs, epoch=t0)
         ts_noise = TimeSeries(self.noise_td[strainI], dt=1/fs, epoch=t0)
         return ts, ts_noise
@@ -151,7 +153,7 @@ class GWScenario:
         self.logger.info("$$$ making time domain plot")
         white   = ts.whiten(4, 2).bandpass(40, 200)
         white_noise = ts_noise.whiten(4, 2).bandpass(40, 200)
-        t_start = timeCenter - 3.0
+        t_start = timeCenter - 5.0
         t_end   = timeCenter + 0.5
 
         white_zoom    = white.crop(t_start, t_end)
@@ -172,7 +174,7 @@ class GWScenario:
 
         # Whitened signal (red, more prominent)
         ax.plot(white_zoom.times, white_zoom.value,
-                color="red", alpha=0.2, lw=1.2, label="full signal")
+                color="red", alpha=0.4, lw=1.2, label="full signal")
         # Raw data (grey, semi-transparent)
         ax.plot(white_zoom.times, raw_scaled,
                 color="black", alpha=1, lw=1, label="signal")
@@ -190,7 +192,7 @@ class GWScenario:
         qspec = ts.q_transform(
             qrange=(8, 8),
             frange=(20, 512),
-            outseg=(timeCenter - self.config.duration//2, timeCenter + self.config.duration//2), 
+            outseg=(0, self.config.duration), 
             whiten=True,              
         )
 
@@ -218,7 +220,7 @@ class GWScenario:
         self.logger.info("$$$ getting waveform parameters")
         
         #convert masses to chirp and ratio
-        m1_1, m2_1   = 12.0, 10.0
+        m1_1, m2_1   = 10.0, 8.0
         m1_2, m2_2   = 15.0, 10.0
         chirp_1, q_1 = self._massesToChirpAndQ(m1_1, m2_1)
         chirp_2, q_2 = self._massesToChirpAndQ(m1_2, m2_2)
@@ -232,32 +234,32 @@ class GWScenario:
             tilt_2              = 1e-6,
             phi_12              = 1e-6,  #part of the spin of the black hole
             phi_jl              = 1e-6,
-            luminosity_distance = 5000.0, #2000
+            luminosity_distance = 5500.0, #2000
             theta_jn            = 0.2, #angle of angular momentum
             psi                 = 2.659,  #angle of polarization
             phase               = 0.9,
-            geocent_time        = self.config.duration/2,# 0.5,
+            geocent_time        = self.config.duration*0.8,# 0.5,
             ra                  = 1.375, #longituded
             dec                 = -1.2108,  #lattiude
         )
-        # injct_params_wave_2 = dict(
-        #     chirp_mass          = chirp_2,
-        #     mass_ratio          = q_2,
-        #     a_1                 = 0.2,  #part of the spin of the black hole
-        #     a_2                 = 0.9,
-        #     tilt_1              = 0.2, #part of the spin of the black hole
-        #     tilt_2              = 2.0,
-        #     phi_12              = 5.7,  #part of the spin of the black hole
-        #     phi_jl              = 1.3,
-        #     luminosity_distance = 5000.0, #2000
-        #     theta_jn            = 1.5, #angle of angular momentum
-        #     psi                 = 2.659,  #angle of polarization
-        #     phase               = 1.2,
-        #     geocent_time        = self.config.duration/2 - time_delta,
-        #     ra                  = 1.75, #longituded
-        #     dec                 = -2.8,  #lattiude
-        # )
-        injct_params_waves = [injct_params_wave_1]#,injct_params_wave_2]
+        injct_params_wave_2 = dict(
+            chirp_mass          = chirp_2,
+            mass_ratio          = q_2,
+            a_1                 = 0.2,  #part of the spin of the black hole
+            a_2                 = 0.9,
+            tilt_1              = 0.2, #part of the spin of the black hole
+            tilt_2              = 2.0,
+            phi_12              = 0.7,  #part of the spin of the black hole
+            phi_jl              = 1.3,
+            luminosity_distance = 6000.0, #2000
+            theta_jn            = 1.5, #angle of angular momentum
+            psi                 = 2.659,  #angle of polarization
+            phase               = 1.2,
+            geocent_time        = self.config.duration*0.8 - self.config.time_delta,
+            ra                  = 1.75, #longituded
+            dec                 = -2.8,  #lattiude
+        )
+        injct_params_waves = [injct_params_wave_1,injct_params_wave_2]
         return injct_params_waves
     
     def build_ref_injection(self,injections):
@@ -285,6 +287,8 @@ class GWScenario:
     def load_psd(self,psd_name):
         # 1) Try HPC path
         base_path = os.environ.get("GW_INP_DIR")
+        if base_path is None:
+            base_path = "" 
         hpc_path  = os.path.join(base_path, psd_name)
         try:
             return bilby.gw.detector.PowerSpectralDensity.from_power_spectral_density_file(

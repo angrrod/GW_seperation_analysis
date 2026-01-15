@@ -4,6 +4,7 @@ from bilby.core.result import read_in_result
 import copy
 from scenario import GWScenario
 from .MethodConfig import MethodConfig
+from .Method_type import Method_type
 import numpy as np
 from bilby.gw.detector import InterferometerList
 from bilby.core.prior import DeltaFunction
@@ -45,7 +46,7 @@ class Method(ABC):
             priors                   = priors,
             fiducial_parameters      = fiducial_parameters,
             update_fiducial_parameters=True,
-            distance_marginalization = True,
+            distance_marginalization = False,
             phase_marginalization    = True,
             time_marginalization     = True,
             jitter_time              = False
@@ -60,7 +61,7 @@ class Method(ABC):
         else:
             clean = False
             
-        priors = self.prior()
+        priors = self.prior
         if priors is None:
             raise NotImplementedError("prior is not implemented")
         
@@ -92,7 +93,10 @@ class Method(ABC):
         else:
             outdir = "logs/log_ET_dynesty_" + self.method_type.code + "/" + self.method_type.code + "_result.json"
             result = read_in_result(outdir) #outdir is also used in sampeler 
-        
+        self.updateResults(result)
+    
+    def updateResults(self,result):
+        #default implementation only used in the hyrarchical method
         self.UpdateMargPosterior(result)
         self.results = {"waveFormA" : result} #result object
 
@@ -124,7 +128,7 @@ class Method(ABC):
         )
         prior["luminosity_distance"] = bilby.gw.prior.UniformSourceFrame(
             minimum=1e3,      
-            maximum=1e4, #1e5      
+            maximum=1e5, #1e5      
             cosmology='Planck15',
             name='luminosity_distance',
             latex_label='$d_L$',
@@ -159,15 +163,14 @@ class Method(ABC):
         posterior = result.posterior
         idx_ml    = posterior["log_likelihood"].idxmax()
         ml_sample = posterior.loc[idx_ml]
-        return {k: ml_sample[k] for k in result.search_parameter_keys} #format for waveform generator, 
-        #"result.search_parameter_keys" can go wrong if you constrain/marginalize some parameters
+        return ml_sample 
         
     def getResidualIfos(self,MLPosteriorA):
         """returns the residual ifos without the MLPosterior waveform, used for residual analysis of the method"""
         second_wave_ifos     = []
         for ifo in self.scenario.ifos:
-            pols                 = self.scenario.wg.frequency_domain_source_model(ifo.frequency_array,MLPosteriorA) #returns cross and plus waveform
-            h_fd                 = ifo.get_detector_response(pols, MLPosteriorA)
+            pols                 = self.scenario.wg.frequency_domain_strain(parameters=dict(MLPosteriorA)) #returns cross and plus waveform
+            h_fd                 = ifo.get_detector_response(pols, dict(MLPosteriorA))
             d_fd                 = ifo.strain_data.frequency_domain_strain
             res_fd               = d_fd - h_fd
             second_wave_ifo      = self._clone_ifo_with_new_fd_strain(ifo,res_fd)

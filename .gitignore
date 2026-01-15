@@ -219,3 +219,4 @@ out/*
 !out/results.json
 .vscode
 logs
+HPC_diagnostics

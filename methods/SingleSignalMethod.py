@@ -45,7 +45,7 @@ class SingleSignalMethod(Method):
             nact       = self.config.nact, #amount of steps is tuned so autocorr is small enough 
             resume     = not self.run_sampler,
             clean      = clean,
-            # live_points= live_points,
+            # live_points= live_points, #TODO: DELETE
             outdir     = "logs/log_ET_dynesty_" + self.method_type.code + self.nameExtra,
             label      = self.method_type.code,
             npool      = self.config.npool,
@@ -81,53 +81,151 @@ class SingleSignalMethod(Method):
         if bad:
             self.logger.warning(f"$$$ Non-finite ln_prob at injection: {bad[:10]}")
         
-    def _probe_local_logl(self,likelihood, theta0, params, rel_scales, n=200, seed=0):
+    def _probe_local_logl(
+        self,
+        likelihood,
+        theta0: dict,
+        params: list[str],
+        rel_scales: dict,
+        n: int = 200,
+        seed: int = 0,
+        clamp_to_prior: bool = True,
+        assert_consistency: bool = True,
+        consistency_tol: float = 1e-3,
+    ):
         """
         Diagnostic: random local probing around theta0.
+
+        Changes vs your version:
+        1) Sets likelihood.parameters = dict(theta) (not .update) to reduce cache artefacts.
+        2) Optionally clamps proposals to bounded priors.
+        3) Computes logL, logLR, logL_noise and checks logL ≈ logL_noise + logLR.
+        4) Logs marginalisation flags and warns if you probe marginalised parameters.
+
         - params: list of parameter names to perturb
         - rel_scales: dict {param: relative step size} e.g. 1e-3, 1e-2
-        (absolute step will be derived from prior width if possible, else from |theta0|+1)
-        Returns summary dict + samples list.
+        absolute step is derived from prior width if possible, else from |theta0|+1
+        Returns: (summary_dict, records)
+        where records are dicts with keys: logL, dlogL, logLR, logL_noise, err, theta
         """
         rng = np.random.default_rng(seed)
 
-        # Ensure we only use keys relevant to this likelihood
+        # Keep only parameters that are in the priors of this likelihood
         theta0 = {k: v for k, v in theta0.items() if k in likelihood.priors}
 
-        # Build absolute scales using priors when available (Uniform priors are easiest)
+        # Log marginalisation status (bilby GW likelihood has these attrs)
+        time_marg = getattr(likelihood, "time_marginalization", None)
+        phase_marg = getattr(likelihood, "phase_marginalization", None)
+        dist_marg = getattr(likelihood, "distance_marginalization", None)
+        self.logger.info(
+            f"$$$ [local probe] marg flags: time={time_marg}, phase={phase_marg}, dist={dist_marg}"
+        )
+
+        # Warn if probing parameters that are typically marginalised
+        marginalised_names = {"geocent_time": time_marg, "phase": phase_marg, "luminosity_distance": dist_marg}
+        bad = [p for p in params if marginalised_names.get(p, False)]
+        if bad:
+            self.logger.warning(
+                "$$$ [local probe] You are probing parameters that appear to be marginalised in this likelihood: "
+                + ", ".join(bad)
+                + ". Results may be hard to interpret."
+            )
+
+        # Build absolute scales
         abs_scales = {}
         for p in params:
             if p not in theta0:
                 continue
+
             prior = likelihood.priors.get(p, None)
-            s_rel = rel_scales.get(p, 1e-3)
+            s_rel = float(rel_scales.get(p, 1e-3))
 
             s_abs = None
-            # Try to infer a characteristic width from the prior
-            if hasattr(prior, "minimum") and hasattr(prior, "maximum"):
-                width = float(prior.maximum - prior.minimum)
-                s_abs = s_rel * width
+            if prior is not None and hasattr(prior, "minimum") and hasattr(prior, "maximum"):
+                try:
+                    width = float(prior.maximum - prior.minimum)
+                    s_abs = s_rel * width
+                except Exception:
+                    s_abs = None
+
             if s_abs is None:
                 s_abs = s_rel * (abs(float(theta0[p])) + 1.0)
 
-            abs_scales[p] = s_abs
+            abs_scales[p] = float(s_abs)
 
-        # Reference logL
-        likelihood.parameters.update(theta0)
+        # Reference point
+        likelihood.parameters = dict(theta0)
         logL0 = float(likelihood.log_likelihood())
 
+        # For consistency checks
+        def _maybe_noise_logl():
+            fn = getattr(likelihood, "noise_log_likelihood", None)
+            return float(fn()) if callable(fn) else None
+
+        def _maybe_loglr():
+            fn = getattr(likelihood, "log_likelihood_ratio", None)
+            return float(fn()) if callable(fn) else None
+
+        logL0_noise = _maybe_noise_logl()
+        logL0_lr = _maybe_loglr()
+        if assert_consistency and (logL0_noise is not None) and (logL0_lr is not None):
+            err0 = logL0 - (logL0_noise + logL0_lr)
+            if abs(err0) > consistency_tol:
+                self.logger.warning(
+                    f"$$$ [local probe] Inconsistency at theta0: "
+                    f"logL - (noise+logLR) = {err0:.6g}"
+                )
+
         records = []
-        for i in range(n):
+        for _ in range(n):
             theta = dict(theta0)
+
+            # Propose
             for p, s_abs in abs_scales.items():
                 theta[p] = float(theta[p] + rng.normal(0.0, s_abs))
 
-            likelihood.parameters.update(theta)
+                # Optional clamp to bounded priors
+                if clamp_to_prior:
+                    prior = likelihood.priors.get(p, None)
+                    if prior is not None and hasattr(prior, "minimum") and hasattr(prior, "maximum"):
+                        try:
+                            lo = float(prior.minimum)
+                            hi = float(prior.maximum)
+                            if theta[p] < lo:
+                                theta[p] = lo
+                            elif theta[p] > hi:
+                                theta[p] = hi
+                        except Exception:
+                            pass
+
+            # Evaluate
+            likelihood.parameters = dict(theta)
             logL = float(likelihood.log_likelihood())
-            records.append((logL, logL - logL0, theta))
+            logL_noise = _maybe_noise_logl()
+            logLR = _maybe_loglr()
+
+            err = None
+            if (logL_noise is not None) and (logLR is not None):
+                err = float(logL - (logL_noise + logLR))
+                if assert_consistency and abs(err) > consistency_tol:
+                    # Don't spam: store it; also occasionally warn
+                    self.logger.debug(
+                        f"$$$ [local probe] Inconsistency: logL - (noise+logLR) = {err:.6g}"
+                    )
+
+            records.append(
+                {
+                    "logL": logL,
+                    "dlogL": float(logL - logL0),
+                    "logLR": logLR,
+                    "logL_noise": logL_noise,
+                    "consistency_err": err,
+                    "theta": theta,
+                }
+            )
 
         # Summaries
-        dlogL = np.array([r[1] for r in records], dtype=float)
+        dlogL = np.array([r["dlogL"] for r in records], dtype=float)
         summary = {
             "logL0": logL0,
             "dlogL_mean": float(np.mean(dlogL)),
@@ -137,56 +235,84 @@ class SingleSignalMethod(Method):
             "frac_improving": float(np.mean(dlogL > 0)),
         }
 
-        self.logger.info(f"$$$ [local probe] logL0={summary['logL0']:.3f}")
-        self.logger.info(f"$$$ [local probe] ΔlogL: mean={summary['dlogL_mean']:.3f}, std={summary['dlogL_std']:.3f}, "
-                    f"$$$ min={summary['dlogL_min']:.3f}, max={summary['dlogL_max']:.3f}, "
-                    f"$$$ frac(ΔlogL>0)={summary['frac_improving']:.3f}")
+        # Add quick consistency diagnostics
+        errs = [r["consistency_err"] for r in records if r["consistency_err"] is not None]
+        if errs:
+            errs = np.array(errs, dtype=float)
+            summary["consistency_err_maxabs"] = float(np.max(np.abs(errs)))
+            summary["consistency_err_mean"] = float(np.mean(errs))
+        else:
+            summary["consistency_err_maxabs"] = None
+            summary["consistency_err_mean"] = None
 
-        # Log the best point found locally (purely diagnostic)
-        best = max(records, key=lambda r: r[0])
-        self.logger.info(f"$$$ [local probe] best local logL={best[0]:.3f} (Δ={best[1]:.3f})")
-        self.logger.info(f"$$$ [local probe] best local theta (subset): " +
-                    ", ".join([f"{p}={best[2].get(p)}" for p in params if p in best[2]]))
+        self.logger.info(f"$$$ [local probe] logL0={summary['logL0']:.3f}")
+        self.logger.info(
+            f"$$$ [local probe] ΔlogL: mean={summary['dlogL_mean']:.3f}, std={summary['dlogL_std']:.3f}, "
+            f"min={summary['dlogL_min']:.3f}, max={summary['dlogL_max']:.3f}, "
+            f"frac(ΔlogL>0)={summary['frac_improving']:.3f}"
+        )
+        if summary["consistency_err_maxabs"] is not None:
+            self.logger.info(
+                f"$$$ [local probe] max|logL-(noise+logLR)| = {summary['consistency_err_maxabs']:.3g}, "
+                f"mean err = {summary['consistency_err_mean']:.3g}"
+            )
+
+        # Best point
+        best = max(records, key=lambda r: r["logL"])
+        self.logger.info(
+            f"$$$ [local probe] best local logL={best['logL']:.3f} (Δ={best['dlogL']:.3f})"
+        )
+        if best["logL_noise"] is not None and best["logLR"] is not None:
+            self.logger.info(
+                f"$$$ [local probe] best: logL_noise={best['logL_noise']:.3f}, "
+                f"logLR={best['logLR']:.3f}, "
+                f"err={best['consistency_err']:.3g}"
+            )
+
+        self.logger.info(
+            "$$$ [local probe] best local theta (subset): "
+            + ", ".join([f"{p}={best['theta'].get(p)}" for p in params if p in best["theta"]])
+        )
 
         return summary, records
-    def _probe_local_logl_test(self,like,theta_inj,theta_ml):
+
+    def _probe_local_logl_test(self, like, theta_inj):
         self.logger.info("$$$ probing likelihood test")
-        # Example: probe only a few sensitive params first (diagnostic)
-        params = ["geocent_time", "phase", "chirp_mass", "mass_ratio", "luminosity_distance"]
+
+        # If your likelihood marginalises time/phase/distance, do NOT probe them here
+        time_marg = getattr(like, "time_marginalization", False)
+        phase_marg = getattr(like, "phase_marginalization", False)
+        dist_marg = getattr(like, "distance_marginalization", False)
+
+        params = ["chirp_mass", "mass_ratio"]  # safe baseline
         rel_scales = {
-            "geocent_time": 1e-3,          # interpreted relative to prior width if Uniform
-            "phase": 1e-2,
             "chirp_mass": 1e-3,
             "mass_ratio": 1e-3,
-            "luminosity_distance": 1e-3,
         }
-        
+
+        # Only probe these if they are NOT marginalised
+        if not time_marg:
+            params.append("geocent_time")
+            rel_scales["geocent_time"] = 1e-3
+        if not phase_marg:
+            params.append("phase")
+            rel_scales["phase"] = 1e-2
+        if not dist_marg:
+            params.append("luminosity_distance")
+            rel_scales["luminosity_distance"] = 1e-3
+
         for i in range(10):
-            self._probe_local_logl(like, theta_inj, params, rel_scales, n=200, seed=i+1)
-
-
-    def _eval_logL_for_ifos(self, ifos_subset, theta):
-        like = self.getLikelihood(ifos_override=ifos_subset)  # you may need to implement this override
-        theta = {k: v for k, v in theta.items() if k in like.priors}
-        like.parameters.update(theta)
-        return float(like.log_likelihood())
-    
-    def _run_ifo_tests(self,theta_inj,theta_ml):
-        self.logger.info("$$$ check ifos")
-        ifos_ce = self.scenario.ifos[0:3]
-        ifos_et = self.scenario.ifos[3:5];
-
-        logL_inj_ce = self._eval_logL_for_ifos(ifos_ce, theta_inj)
-        logL_inj_et = self._eval_logL_for_ifos(ifos_et, theta_inj)
-        logL_inj_all = self._eval_logL_for_ifos(ifos_ce + ifos_et, theta_inj)
-
-        # same at ML
-        logL_ml_ce  = self._eval_logL_for_ifos(ifos_ce, theta_ml)
-        logL_ml_et  = self._eval_logL_for_ifos(ifos_et, theta_ml)
-        logL_ml_all = self._eval_logL_for_ifos(ifos_ce + ifos_et, theta_ml)
-
-        self.logger.info(f"$$$ logL(inj): CE={logL_inj_ce:.3f}, ET={logL_inj_et:.3f}, ALL={logL_inj_all:.3f}")
-        self.logger.info(f"$$$ logL(ml):  CE={logL_ml_ce:.3f}, ET={logL_ml_et:.3f}, ALL={logL_ml_all:.3f}")
+            self._probe_local_logl(
+                like,
+                theta_inj,
+                params,
+                rel_scales,
+                n=200,
+                seed=i + 1,
+                clamp_to_prior=True,
+                assert_consistency=True,
+                consistency_tol=1e-3,
+            )
     
     def getLikelihood(self, ifos_override=None):
         # build the real likelihood object from Method
@@ -240,8 +366,7 @@ class SingleSignalMethod(Method):
         
         self._missing_dropped_keys_test(likelihood)
         self._bad_prior_support_test(likelihood,inj)
-        self._probe_local_logl_test(likelihood,theta_inj,theta_ml)
-        # self._run_ifo_tests(theta_inj,theta_ml)
+        self._probe_local_logl_test(likelihood,theta_inj)
         self._ML_inj_comparison_test(likelihood,inj,result)
         
     def _filter_theta_to_priors(self, like, theta: dict) -> dict:
@@ -340,16 +465,6 @@ class SingleSignalMethod(Method):
                     f.write(msg + "\n")
 
             return logL_cur
-
-        # def wrapped_log_likelihood(*args, **kwargs):
-        #     return _wrapped_core(orig_logl, "logl", *args, **kwargs)
-
-        # like.log_likelihood = wrapped_log_likelihood
-
-        # if orig_loglr is not None:
-        #     def wrapped_log_likelihood_ratio(*args, **kwargs):
-        #         return _wrapped_core(orig_loglr, "loglr", *args, **kwargs)
-        #     like.log_likelihood_ratio = wrapped_log_likelihood_ratio
             
         return like
     
