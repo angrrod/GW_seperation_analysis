@@ -25,7 +25,7 @@ class JointLikelihoodlMethod(Method):
             priors             = self.prior,
             reference_frame    = "sky",
             time_reference     = "geocenter",
-            delta              = 0.03,  # RB binning tolerance
+            delta              = 0.001,  # RB binning tolerance
         )
         return likelihood
     
@@ -37,14 +37,14 @@ class JointLikelihoodlMethod(Method):
         wg_rb = bilby.gw.waveform_generator.WaveformGenerator(
             duration                      = self.scenario.wg.duration,
             sampling_frequency            = self.scenario.wg.sampling_frequency,
-            frequency_domain_source_model = bilby.gw.source.lal_binary_black_hole,  #jrb_lal_binary_black_hole self.scenario.wg.frequency_domain_source_model
+            frequency_domain_source_model = bilby.gw.source.lal_binary_black_hole_relative_binning, #lal_binary_black_hole  #jrb_lal_binary_black_hole self.scenario.wg.frequency_domain_source_model
             parameter_conversion          = bilby.gw.conversion.convert_to_lal_binary_black_hole_parameters,
             waveform_arguments            = self.scenario.wg.waveform_arguments.copy()
         )
         return wg_rb
     
     def updateResults(self,result):
-        self.UpdateMargPosterior(result)
+        self.logger.info("$$$ split waveforms for result object")
         posterior    = result.posterior
         resultA      = posterior.loc[:, posterior.columns.str.endswith("_A")]
         resultB      = posterior.loc[:, posterior.columns.str.endswith("_B")]
@@ -53,4 +53,5 @@ class JointLikelihoodlMethod(Method):
         self.results = {"waveFormA" : resultA,"waveFormB" : resultB}
         
     def getPrior(self):
+        self.logger.info("$$$ getting the prior")
         return self.getJointPriors()

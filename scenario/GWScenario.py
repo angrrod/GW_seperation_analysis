@@ -17,9 +17,10 @@ class GWScenario:
             
         #set-up plotting dirs separate from post processing dir
         #parameters to be initialized during set_up:
-        self.ifos     = None
-        self.noise_td = None #for plotting
-        self.wg       = None
+        self.ifos          = None
+        self.noise_td      = None #for plotting
+        self.wg            = None
+        self.ifos_replaced = None
         
     def setUpScenario(self):
         """
@@ -83,6 +84,7 @@ class GWScenario:
             "geocent_time"]: 
             if k in converted[0]:
                 self.logger.info(f"$$$ {k}, {converted[0].get(k)}")
+                
     def _getInterferrometerSetUp(self,PSD_ET,PSD_CE):
         
         #Einstein telescope set-up at rhine meuse

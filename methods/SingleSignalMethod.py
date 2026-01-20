@@ -10,9 +10,17 @@ class SingleSignalMethod(Method):
     def __init__(self, run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig,start_from_chekpt):
         super().__init__( run_sampler, scenario, logger, config,start_from_chekpt)
         self.method_type = Method_type.SINGLE
-        self.nameExtra = ""
-        self._logl_diag_state = {"did_header": set()}
-    
+        self.nameExtra = "" #needed for getting the correct logging directories
+        self._logl_diag_state = {"did_header": set()} #logging purposes
+        
+    def setNameExtra(self,nameExtra):
+        self.nameExtra = nameExtra
+        
+    def updateResults(self,result):
+        #default implementation only used in the hyrarchical method
+        self.UpdateMargPosterior(result)
+        self.results = {"waveFormA" : result} #result object
+        
     def sampeler(self):
         #adapt the prior
         self.logger.info("$$$ Generating posterior samples using nested sampeling dynesty for single signal")
@@ -578,4 +586,5 @@ class SingleSignalMethod(Method):
                 f"freq_fp={fa_fingerprint} noise_logL={noise_ev}\n"
             )
     def getPrior(self):
+        self.logger.info("$$$ getting the prior")
         return self.GetSinglePrior() 

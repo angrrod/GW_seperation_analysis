@@ -10,7 +10,8 @@ class HyrarchicalMethod(Method):
         super().__init__(run_sampler, scenario, logger, config,start_from_chekpt)
         self.method_type             = Method_type.HIERARCHICAL
         self.singleSampler           = SingleSignalMethod(True, scenario, logger,config,start_from_chekpt = False) #run_sampler to true so that we always generate a new sample instead of using the one from the single method
-        self.singleSampler.nameExtra = "1" 
+        self.singleSampler.setNameExtra("1")
+        
         self.second_wave_ifos        = self.scenario.ifos
         # (1) update the likelihood to have the second ifos
         self.likelihood              = self.getLikelihood() 
@@ -18,12 +19,13 @@ class HyrarchicalMethod(Method):
     def generateSamples(self):
         self.logger.info("$$$ generate Samples for hyrarchical model")
         self.singleSampler.generateSamples()
-        resultsSampleA       = copy.deepcopy(self.singleSampler.results["waveFormA"])
-        MLPosteriorA         = self._getMaximumLikelihood(resultsSampleA)
+        resultsSampleA        = copy.deepcopy(self.singleSampler.results["waveFormA"])
+        MLPosteriorA          = self._getMaximumLikelihood(resultsSampleA)
         
-        self.second_wave_ifos = self.getResidualIfos(MLPosteriorA)
+        self.second_wave_ifos = self.getResidualIfos_freq(MLPosteriorA)
         
-        self.scenario.makePlots(["strain_time_domain_set_up_hyrarchical","qtransform_set_up_hyrarchical"],"",self.second_wave_ifos)
+        #TODO: remove
+        #self.scenario.makePlots(["strain_time_domain_set_up_hyrarchical","qtransform_set_up_hyrarchical"],"",self.second_wave_ifos)
         super().generateSamples()
         resultsSampleB     = self.results['waveFormA'] #if we marginalize, the resampeling of the general posterior has been done via generateSamples() in the super class. 
         self.results = {
@@ -52,4 +54,5 @@ class HyrarchicalMethod(Method):
         return likelihood
     
     def getPrior(self):
+        self.logger.info("$$$ getting the prior")
         return self.GetSinglePrior() 
