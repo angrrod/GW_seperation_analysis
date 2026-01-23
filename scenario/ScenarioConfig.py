@@ -9,3 +9,4 @@ class ScenarioConfig:
     time_delta: float          = 3.0 #time between the 2 signals
     ASD_file_name_ET: str      = "ET_D"
     ASD_file_name_CE: str      = "cosmic_explorer_strain"
+    UseRelBinning: bool        = True 

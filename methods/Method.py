@@ -4,32 +4,83 @@ from bilby.core.result import read_in_result
 import copy
 from scenario import GWScenario
 from .MethodConfig import MethodConfig
-from .Method_type import Method_type
-import numpy as np
-from bilby.gw.detector import InterferometerList
 from bilby.core.prior import DeltaFunction
-from bilby.gw.conversion import generate_posterior_samples_from_marginalized_likelihood
-from bilby.gw.utils import noise_weighted_inner_product
-class Method(ABC):
-    def __init__(self,run_sampler:bool,scenario:GWScenario,logger,config:MethodConfig,start_from_chekpt):
-
-        self.run_sampler       = run_sampler
-        self.scenario          = scenario
-        self.logger            = logger
-        self.method_type       = None
-        self.config            = config
-        self.start_from_chekpt = start_from_chekpt
-        self.results           = None
-        self.prior             = self.getPrior()
-        self.likelihood        = self.getLikelihood()
-        
-    def overideLikelihood(self,ifos_override):
-        #overrirde the likelihood
-        self.likelihood = self.getLikelihood(ifos_override)
+from bilby.core.result import read_in_result
+from enum import Enum
+from bilby.gw.detector import InterferometerList
+class RunMode(Enum):
+    RUN    = "run"
+    REUSE  = "reuse"
+    CHEKPT = "checkpoint"
     
-    def getLikelihood(self, ifos_override=None):
-        self.logger.info("$$$ get a single likelihood signal")
-        #allow to overwride the IFOS for debugging/testing
+class Method(ABC):
+    def __init__(self,scenario:GWScenario,logger,config:MethodConfig,pipeline_type_code:str):
+        self.scenario           = scenario
+        self.logger             = logger
+        self.config             = config
+        self.prior              = self.getPrior()
+        self.pipeline_type_code = pipeline_type_code
+        self.wg_rel             = self._getRBWaveForm()
+    
+    def sample(self,resume,clean,ifos_override):
+        #adapt the prior
+        self.logger.info("$$$ Starting sampler")
+        
+        if self.prior is None:
+            raise NotImplementedError("prior is not implemented")
+        likelihood = self.getLikelihood(ifos_override)
+        # TODO: DELETE
+        # seed_theta = self.scenario.injct_params_waves[0]   # injection dict
+        # live_points = self._make_seeded_live_points_dynesty(
+        #     likelihood=likelihood,
+        #     priors=self.prior,
+        #     seed_theta=seed_theta,
+        #     nlive=self.config.nlive,
+        #     seed_frac=0.05,        # 10% of live points near injection
+        #     rel_jitter=1e-3        # jitter scale relative to prior width
+        # )
+        
+        sample = bilby.run_sampler(
+            likelihood = likelihood,
+            priors     = self.prior,
+            sampler    = self.config.sampler,
+            nlive      = self.config.nlive, 
+            dlogz      = self.config.dlogz, #stopping criterion for the evidence
+            sample     = self.config.sample,  
+            walks      = self.config.walks, #steps for MCMC sampeler to select new candidates  
+            bound      = self.config.bound,
+            maxmcmc    = self.config.maxmcmc,
+            nact       = self.config.nact, #amount of steps is tuned so autocorr is small enough 
+            resume     = resume,
+            clean      = clean,
+            # live_points= live_points, #TODO: DELETE
+            outdir     = "logs/log_ET_dynesty_" + self.pipeline_type_code + self.nameExtra,
+            label      = self.pipeline_type_code,
+            npool      = self.config.npool,
+            queue_size = self.config.npool
+        )
+        results = self.updateResults(sample,likelihood)
+        return results
+    
+    def run(self,runMode:RunMode,ifos_override):
+        #main entry point
+        self.logger.info("$$$ Generating posterior samples")
+        if runMode == RunMode.REUSE:
+            outdir = "logs/log_ET_dynesty_" + self.pipeline_type_code + "/" + self.pipeline_type_code + "_result.json"
+            result = read_in_result(outdir) #outdir is also used in sampeler
+            result = self.postprocessReusedResult(result)
+            
+        else: 
+            if runMode == RunMode.RUN:
+                clean  = True
+                resume = False
+            elif runMode == RunMode.CHEKPT:
+                clean  = False
+                resume = True
+            result = self.sample(resume,clean,ifos_override)
+        return result
+    
+    def parseIfos_override(self,ifos_override):
         if ifos_override is None:
             ifos = self.scenario.ifos
         else:
@@ -38,93 +89,26 @@ class Method(ABC):
                 ifos = ifos_override
             else:
                 ifos = InterferometerList(ifos_override)
-        
-        priors = self.prior
-        if priors is None:
-            raise NotImplementedError("prior is not implemented")
-        
-        fiducial_parameters = self.scenario.injct_params_waves[0].copy()
-        fiducial_parameters["time_jitter"] = 0.0
-        
-        # likelihood = bilby.gw.likelihood.RelativeBinningGravitationalWaveTransient(  #GravitationalWaveTransient
-        #     interferometers          = ifos,
-        #     waveform_generator       = self.scenario.wg_rel,
-        #     priors                   = priors,
-        #     fiducial_parameters      = fiducial_parameters,
-        #     update_fiducial_parameters=True,
-        #     distance_marginalization = False,
-        #     phase_marginalization    = True,
-        #     time_marginalization     = True,
-        #     jitter_time              = False
-        # )
-        # only set up for debugging
-        likelihood = bilby.gw.likelihood.GravitationalWaveTransient(
-            interferometers=ifos,
-            waveform_generator=self.scenario.wg,  # NOT wg_rel
-            priors=priors,
-            distance_marginalization=False,
-            phase_marginalization=True,
-            time_marginalization=True,
-            jitter_time=False,
-        )
-        return likelihood
+        return ifos
     
-    def sampeler(self):
-        self.logger.info("$$$ Generating posterior samples using nested sampeling dynesty")
-        
-        if self.run_sampler:
-            clean = not self.start_from_chekpt  #do we need to clean the code
-        else:
-            clean = False
-            
-        priors = self.prior
-        if priors is None:
-            raise NotImplementedError("prior is not implemented")
-        
-        sample = bilby.run_sampler(
-            likelihood = self.likelihood,
-            priors     = priors,
-            sampler    = self.config.sampler,
-            nlive      = self.config.nlive, 
-            dlogz      = self.config.dlogz, #stopping criterion for the evidence
-            sample     = self.config.sample,  
-            walks      = self.config.walks, #steps for MCMC sampeler to select new candidates     
-            bound      = self.config.bound,
-            maxmcmc    = self.config.maxmcmc,
-            nact       = self.config.nact, #amount of steps is tuned so autocorr is small enough 
-            resume     = not self.run_sampler,
-            clean      = clean,
-            outdir     = "logs/log_ET_dynesty_" + self.method_type.code,
-            label      = self.method_type.code,
-            npool      = self.config.npool,
-            queue_size = self.config.npool
-        )
-        return sample
-    
-    def generateSamples(self):
-        self.logger.info("$$$ run the samples")
-        #bayesian part
-        if self.run_sampler:
-            result = self.sampeler()
-        else:
-            outdir = "logs/log_ET_dynesty_" + self.method_type.code + "/" + self.method_type.code + "_result.json"
-            result = read_in_result(outdir) #outdir is also used in sampeler 
-        self.updateResults(result)
-        
-    def updateResults(self,result):
+    @abstractmethod
+    def updateResults(self,result,likelihood):
         # method used for postprocessing the result
         raise NotImplementedError
+    
+    @abstractmethod
+    def getLikelihood(self,ifos_override):
+        raise NotImplementedError
+    
+    def postprocessReusedResult(self, result):
+        # default Nothing happens
+        return result
 
-    def UpdateMargPosterior(self,result):
-        result.posterior = generate_posterior_samples_from_marginalized_likelihood(
-            samples=result.posterior,      # what you read from HDF5
-            likelihood=self.likelihood,     # rebuilt likelihood with marg flags enabled
-            npool=18,                  # match your compute setting if you like
-            block=50,
-            use_cache=True,
-        )
 
-    ###   priors   ###
+##################
+###   priors   ###
+##################
+    
     def GetSinglePrior(self,waveformIdx = 0):
         self.logger.info("$$$ getting a waveform prior")
         prior = bilby.gw.prior.BBHPriorDict()  #allow for default ranges in ET
@@ -173,88 +157,20 @@ class Method(ABC):
             priors[f"{key}_B"] = copy.deepcopy(prior)
 
         return priors
-
-    def _getMaximumLikelihood(self,result):
-        posterior = result.posterior
-        idx_ml    = posterior["log_likelihood"].idxmax()
-        ml_sample = posterior.loc[idx_ml]
-        return ml_sample 
-        
-    def getResidualIfos_freq(self,MLPosteriorA):
-        """returns the residual ifos without the MLPosterior waveform, 
-        used for residual analysis of the method.
-        Uses the frequency domain"""
-        second_wave_ifos     = []
-        for ifo in self.scenario.ifos:
-            #polarizations
-            pols                 = self.scenario.wg.frequency_domain_strain(parameters=dict(MLPosteriorA)) #returns cross and plus waveform
-            h_fd                 = ifo.get_detector_response(pols, dict(MLPosteriorA))
-            d_fd                 = ifo.strain_data.frequency_domain_strain
-            res_fd               = d_fd - h_fd
-            second_wave_ifo      = self._clone_ifo_with_new_fd_strain(ifo,res_fd)
-            second_wave_ifos.append(second_wave_ifo)
-        return InterferometerList(second_wave_ifos)
     
-    def _clone_ifo_with_new_fd_strain(self, ifo, new_fd):
+    def _getRBWaveForm(self):
         """
-        Diagnostic: return an IFO that is identical to `ifo` in every way,
-        except that its frequency_domain_strain is replaced by `new_fd`.
-
-        This avoids losing geometry/calibration/min-max-freq/windowing metadata
-        that you would lose with get_empty_interferometer().
+            wavform generator tailored for jointRB 
         """
-        if new_fd.shape != ifo.strain_data.frequency_domain_strain.shape:
-            raise ValueError(
-                f"FD strain shape mismatch for {ifo.name}: "
-                f"new_fd {new_fd.shape} vs original {ifo.strain_data.frequency_domain_strain.shape}"
-            )
-        new_ifo = copy.deepcopy(ifo)
-        new_ifo.set_strain_data_from_frequency_domain_strain(
-            frequency_domain_strain=np.array(new_fd, copy=True),
-            sampling_frequency=ifo.strain_data.sampling_frequency,
-            duration=ifo.strain_data.duration,
-            start_time=ifo.strain_data.start_time,
+        self.logger.info("$$$ get relative binning waveform generator")
+        wg_rb = bilby.gw.waveform_generator.WaveformGenerator(
+            duration                      = self.scenario.wg.duration,
+            sampling_frequency            = self.scenario.wg.sampling_frequency,
+            frequency_domain_source_model = bilby.gw.source.lal_binary_black_hole_relative_binning, #lal_binary_black_hole  #jrb_lal_binary_black_hole self.scenario.wg.frequency_domain_source_model
+            parameter_conversion          = bilby.gw.conversion.convert_to_lal_binary_black_hole_parameters,
+            waveform_arguments            = self.scenario.wg.waveform_arguments.copy()
         )
-        new_ifo.strain_data.frequency_domain_strain = np.array(new_fd, copy=True)
-        return new_ifo
-    
-    def getResidualIfos_time(self,waveForms,amplitudes,ifo):
-        #returns the static likelihood of the residual with amplitudes and waveforms, can be used for model validation and sampling of amplitudes.
-        if len(waveForms) != len(amplitudes):
-            raise AssertionError(f"both waveForms and amplitudes must have the same lenght but got {len(waveForms)} waveforms and {len(amplitudes)} amplitudes")
-        ifo_copy        = copy.deepcopy(ifo)
-        residual_strain = ifo_copy.strain_data.time_domain_strain
-        for i,waveForm in enumerate(waveForms):
-            residual_strain = residual_strain - amplitudes[i]*waveForm
-            
-        #set the strain to allow the internal workings of bilby to convert to freq domain
-        ifo_copy.strain_data.set_from_time_domain_strain(
-            time_domain_strain = residual_strain,
-            sampling_frequency=ifo.strain_data.sampling_frequency,
-            duration=ifo.strain_data.duration,
-            start_time=ifo.strain_data.start_time,
-        )
-        
-        #we use the discretized version of the inner product integral (for which we need df and mask)
-        psd_array   = ifo_copy.power_spectral_density_array
-        residua_feq = ifo_copy.strain_data.frequency_domain_strain
-        df          = ifo_copy.frequency_array[1] - ifo_copy.frequency_array[0] #get frequency bin size
-        mask        = ifo_copy.frequency_mask #get actual used frequencies
-
-        rr = noise_weighted_inner_product(
-            residua_feq[mask],
-            residua_feq[mask],
-            psd_array[mask],
-            df,
-        )
-        logl = -0.5 * rr
-        return ifo_copy,float(logl)
-    
-    def _zero_fd_waveform(self,frequency_array, **params):
-        # Return dict with the polarizations expected by bilby: {'plus': ..., 'cross': ...}
-        # For "no signal", both are zeros.
-        z = np.zeros_like(frequency_array, dtype=complex)
-        return {'plus': z, 'cross': z}
+        return wg_rb   
     
     @abstractmethod
     def getPrior(self):

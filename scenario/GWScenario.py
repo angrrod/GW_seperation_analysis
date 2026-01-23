@@ -20,7 +20,6 @@ class GWScenario:
         self.ifos          = None
         self.noise_td      = None #for plotting
         self.wg            = None
-        self.ifos_replaced = None
         
     def setUpScenario(self):
         """
@@ -36,36 +35,26 @@ class GWScenario:
         
         #add gaussian noise
         self.ifos.set_strain_data_from_power_spectral_densities(
-            sampling_frequency=self.config.sampling_frequency,
-            duration=self.config.duration,
-            start_time=0.0
+            sampling_frequency = self.config.sampling_frequency,
+            duration           = self.config.duration,
+            start_time         = 0.0
         )
         
         #noise background used for plotting
-        i = 0
         self.noise_td = []
         for ifo in self.ifos:
-            self.noise_td.append(self.ifos[i].strain_data.time_domain_strain.copy())
-            i += 1
+            self.noise_td.append(ifo.strain_data.time_domain_strain.copy())
             
         # BBH signal
+        # waveform generator for normal likelihood model
         self.wg = bilby.gw.waveform_generator.WaveformGenerator(
-            duration=self.config.duration,
-            sampling_frequency=self.config.sampling_frequency,
-            frequency_domain_source_model=lal_binary_black_hole,
-            parameter_conversion=bilby.gw.conversion.convert_to_lal_binary_black_hole_parameters,
-            waveform_arguments={k: v for k, v in asdict(self.config).items() if k in {"waveform_approximant","minimum_frequency","reference_frequency"
-        }}  #remove redundant variables
+            duration                      = self.config.duration,
+            sampling_frequency            = self.config.sampling_frequency,
+            frequency_domain_source_model = lal_binary_black_hole,
+            parameter_conversion          = bilby.gw.conversion.convert_to_lal_binary_black_hole_parameters,
+            waveform_arguments            = {k: v for k, v in asdict(self.config).items() if k in {"waveform_approximant","minimum_frequency","reference_frequency"
+        }}  
         )
-        self.wg_rel = bilby.gw.waveform_generator.WaveformGenerator(
-            duration=self.config.duration,
-            sampling_frequency=self.config.sampling_frequency,
-            frequency_domain_source_model=bilby.gw.source.lal_binary_black_hole_relative_binning,
-            parameter_conversion=bilby.gw.conversion.convert_to_lal_binary_black_hole_parameters,
-            waveform_arguments={k: v for k, v in asdict(self.config).items() if k in {"waveform_approximant","minimum_frequency","reference_frequency"
-        }}  #remove redundant variables
-        )
-
         
         #inject N waves
         self.logger.info("$$$ injecting " + str(len(self.injct_params_waves)) + " waves")
@@ -95,32 +84,32 @@ class GWScenario:
         xarm_azimuth_deg = 0.0
         yarm_azimuth_deg = xarm_azimuth_deg + 60.0
 
-        f_min = self.config.minimum_frequency
-        f_max = self.config.sampling_frequency / 2
+        f_min  = self.config.minimum_frequency
+        f_max  = self.config.sampling_frequency / 2
         ifos_1 = TriangularInterferometer(
-            name="ET",
-            minimum_frequency=f_min,   # choose consistently with your waveform and PSD validity
-            maximum_frequency=f_max,   # e.g. Nyquist-ish; bilby will also use your strain settings
-            length=10.0,               # km                              
-            latitude=latitude_deg,
-            longitude=longitude_deg,
-            elevation=elevation_m,
-            power_spectral_density=PSD_ET,
-            xarm_azimuth=xarm_azimuth_deg,
-            yarm_azimuth=yarm_azimuth_deg
+            name                   = "ET",
+            minimum_frequency      = f_min,   # choose consistently with your waveform and PSD validity
+            maximum_frequency      = f_max,   # e.g. Nyquist-ish; bilby will also use your strain settings
+            length                 = 10.0,               # km                              
+            latitude               = latitude_deg,
+            longitude              = longitude_deg,
+            elevation              = elevation_m,
+            power_spectral_density = PSD_ET,
+            xarm_azimuth           = xarm_azimuth_deg,
+            yarm_azimuth           = yarm_azimuth_deg
         )
         
         # CE set-up
-        H1 = bilby.gw.detector.get_empty_interferometer("H1")
-        L1 = bilby.gw.detector.get_empty_interferometer("L1")
+        H1     = bilby.gw.detector.get_empty_interferometer("H1")
+        L1     = bilby.gw.detector.get_empty_interferometer("L1")
         ifos_2 = bilby.gw.detector.InterferometerList([H1, L1])
         
         # Load spectral density according to the file
         for ifo in ifos_2:
             ifo.power_spectral_density = PSD_CE
-            ifo.length = 40.0 #km
-            ifo.minimum_frequency = f_min
-            ifo.maximum_frequency = f_max
+            ifo.length                 = 40.0 #km
+            ifo.minimum_frequency      = f_min
+            ifo.maximum_frequency      = f_max
         ifos = bilby.gw.detector.InterferometerList(ifos_1 + ifos_2)
         
         return ifos
@@ -153,22 +142,22 @@ class GWScenario:
     def _PlotTimeSignal(self,ts,timeCenter,ts_noise,fileName,outDir):
         #plot time domain of signal
         self.logger.info("$$$ making time domain plot")
-        white   = ts.whiten(4, 2).bandpass(40, 200)
+        white       = ts.whiten(4, 2).bandpass(40, 200)
         white_noise = ts_noise.whiten(4, 2).bandpass(40, 200)
-        t_start = timeCenter - 5.0
-        t_end   = timeCenter + 0.5
+        t_start     = timeCenter - 5.0
+        t_end       = timeCenter + 0.5
 
-        white_zoom    = white.crop(t_start, t_end)
+        white_zoom       = white.crop(t_start, t_end)
         white_noise_zoom = white_noise.crop(t_start, t_end)
         
         #rescale
         pure_signal = white_zoom.value - white_noise_zoom.value
-        white = white_zoom.value
+        white       = white_zoom.value
 
-        raw_max = np.max(np.abs(pure_signal))
+        raw_max   = np.max(np.abs(pure_signal))
         white_max = np.max(np.abs(white))
 
-        scale = white_max / raw_max        # bring raw up to whitened level
+        scale      = white_max / raw_max        # bring raw up to whitened level
         raw_scaled = pure_signal * scale
         
         # Plot manually using matplotlib (allows full control)
@@ -199,8 +188,8 @@ class GWScenario:
         )
 
         # Let GWpy handle the plotting
-        fig = qspec.plot()
-        ax = fig.gca()
+        fig  = qspec.plot()
+        ax   = fig.gca()
         ax.set_yscale("log")
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("Frequency (Hz)")

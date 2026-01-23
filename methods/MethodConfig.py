@@ -12,7 +12,7 @@ def _default_npool() -> int:
     """
     v = os.environ.get("GW_NPOOL") or os.environ.get("SLURM_CPUS_PER_TASK")
     try:
-        n = int(v) if v is not None else 6  #here we run the normal one for HPC
+        n = int(v) if v is not None else 4  #here we run the normal one for HPC
     except ValueError:
         n = 1  #if error fall back to 1 to ensure runnability
     print(f"using {max(1, n)} processes")

@@ -1,68 +1,11 @@
 
-import os,json
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
+import json
 import corner
-import bilby
-from methods import Method_type
-from scenario import GWScenario
-from pathlib import Path
 import pandas as pd
 import numpy as np
 from scipy.stats import gaussian_kde,entropy
 
 ### helper functions ###
-
-def plotOverlap(params,results,truths,logger,plot_dir):
-    logger.info("$$$ Making corner plots")
-    
-    fig                = None  #necessary for initialization
-    params_A, params_B = addSuffixes(params)
-    
-    #colors
-    cmap               = plt.get_cmap("tab20")
-    colors             = list(cmap.colors)        # length 20
-    n_colors           = len(colors)
-    color_idx          = 0 
-    legend_handles = []  
-    legend_labels  = []
-    
-    for method in results:
-        res = results[method].get('posteriors')
-        for waveform in res:
-            wave = res[waveform]
-            color = colors[color_idx % n_colors]
-            color_idx += 1            #separate the joint poisterior that ends with _A and _B in their respective posterior samples
-            label = f"{method} – {waveform}"
-            
-            if method == Method_type.JOINT.code:
-                df_A = wave.copy()
-                df_A.rename(columns=params_A, inplace=True)
-                df_B = wave.copy()
-                df_B.rename(columns=params_B, inplace=True)
-                fig = createCornerPlot(df_A[params].values,params,color,fig,truths[1])  #index doesn't matter as things get overlapped
-                fig = createCornerPlot(df_B[params].values,params,color,fig,truths[0])
-            else:
-                #Single waveform
-                fig = createCornerPlot(wave[params].values,params,color,fig,truths[0])
-            legend_handles.append(
-                Line2D([0], [0], color=color, lw=2)
-            )
-            legend_labels.append(label)
-
-    fig.legend(
-        legend_handles,
-        legend_labels,
-        loc="upper right",
-        frameon=False,
-        fontsize=10,
-    )
-    fig.tight_layout()
-    
-    fileName = "multiple waveforms"
-    path = os.path.join(plot_dir, f"{fileName}.png")
-    fig.savefig(path, dpi=200)
-    
 def createCornerPlot(samps,params,color,fig,truths):
     fig = corner.corner(
         samps,
@@ -81,72 +24,6 @@ def addSuffixes(strings):
     suffixed_A = {s + "_A":s for s in strings}
     suffixed_B = {s + "_B":s for s in strings}
     return suffixed_A, suffixed_B
-
-def setUpLoggerScenario(ScenConfig):
-    #set-up plotting dirs
-    if "VSC_DATA" in os.environ:
-        base    = os.environ.get("GW_INP_DIR", os.environ["VSC_DATA"])
-        out_dir = os.path.join(base,"postProcessing")
-        log_dir = os.path.join(base,"logs")
-    else:
-        out_dir = "postProcessing"
-        log_dir = "logs"
-    
-    plot_dir = os.path.join(out_dir, "Plots")
-    os.makedirs(plot_dir, exist_ok=True)
-    
-    #Logger
-    bilby.core.utils.setup_logger(
-        log_level="INFO", #DEBUG
-        label="my_run", 
-        outdir=log_dir,
-    )
-    logger = bilby.core.utils.logger
-    logger.info("$$$ start_run")
-    
-    scenario = GWScenario(logger, ScenConfig)
-    scenario.setUpScenario()
-    
-    #test ifo's
-    for ifo in scenario.ifos:
-        td = ifo.strain_data.time_domain_strain
-        scenario.logger.info(f"{ifo.name}: td finite={np.isfinite(td).all()}, std={np.std(td):.3e}, maxabs={np.max(np.abs(td)):.3e}")
-
-        fd = ifo.strain_data.frequency_domain_strain
-        scenario.logger.info(f"{ifo.name}: fd finite={np.isfinite(fd).all()}, std={np.std(fd):.3e}")
-
-        psd = ifo.power_spectral_density.psd_array
-        scenario.logger.info(f"{ifo.name}: psd finite={np.isfinite(psd).all()}, min={np.min(psd):.3e}, max={np.max(psd):.3e}")
-
-    return scenario,logger,plot_dir,out_dir
-
-def writeMethodResult(path,method_name,method_meta,waveform_results,logger):
-    logger.info("$$$ Store data")
-    path = Path(path) / "results.hdf5"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    meta_key = f"/methods/{method_name}/meta"
-    
-    with pd.HDFStore(path, mode="a", complevel=9, complib="blosc:zstd") as store:
-        #create emtpy dataframe so we can attributes at the method level and not the waveform level
-        if meta_key not in store:
-            store.put(meta_key, pd.DataFrame([{}]), format="fixed")
-        store.get_storer(meta_key).attrs.meta_json = json.dumps(method_meta, default=str)
-        
-        for wf, df in waveform_results.items():
-            post_key            = f"/methods/{method_name}/posterior/{wf}"
-            if method_name == Method_type.JOINT.code:
-                posterior = df
-            else:
-                posterior = df.posterior
-            store.put(post_key, posterior, format="table", data_columns=True)
-            st                  = store.get_storer(post_key).attrs
-            st.waveform         = wf
-            st.n_samples        = int(len(posterior))
-            if method_name == Method_type.JOINT.code:
-                info_gain = 0 #0 since the two waveforms ar treated as one
-            else:
-                info_gain = df.information_gain
-            st.information_gain = info_gain
 
 def exctractResults(h5_path,logger):
     logger.info("$$$ extract data")
@@ -260,3 +137,9 @@ def _get_combinations(jointRes:dict,methodRes:dict,logger):
             (jointRes.get('waveFormB'),methodRes.get('waveFormA'))
             ],
                 ]
+
+def getMaximumLikelihood(result):
+    posterior = result.posterior
+    idx_ml    = posterior["log_likelihood"].idxmax()
+    ml_sample = posterior.loc[idx_ml]
+    return ml_sample 
