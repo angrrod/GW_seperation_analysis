@@ -7,6 +7,7 @@ import bilby
 import torch
 from .Pipeline import Pipeline
 from bilby.gw.utils import noise_weighted_inner_product
+from utils import get_base_log_dir
 
 from config.option import parse
 import trainer.denoise_pytorch_trainer
@@ -102,10 +103,15 @@ class TasNetPipeline(Pipeline):
             burn_in    = 1000,
             thin_by    = 10,
             resume     = False,
-            outdir     = "logs/log_ET_dynesty_"+ self.pipeline_type.code+ "_Amplitude",
+            outdir     = self.getAmplitudeDir(),
             label      = "ml_2d",
             )
         return result
+    
+    def getAmplitudeDir(self):
+        base    = get_base_log_dir()
+        dirname = f"{self.singleSampler1.getSampleOutdir("")}_Amplitude"
+        return base / dirname
     
     def getOptimalAmplitudes(self,waveForms,ifo):
         #we use optimal posterior distribution 

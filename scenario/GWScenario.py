@@ -76,6 +76,9 @@ class GWScenario:
                 
     def _getInterferrometerSetUp(self,PSD_ET,PSD_CE):
         
+        # TODO: Test this
+        #ifos = bilby.gw.detector.InterferometerList(['CE', 'ET'])
+
         #Einstein telescope set-up at rhine meuse
         latitude_deg  = 50.85      
         longitude_deg = 5.70    

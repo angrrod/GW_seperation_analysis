@@ -8,6 +8,8 @@ from bilby.core.prior import DeltaFunction
 from bilby.core.result import read_in_result
 from enum import Enum
 from bilby.gw.detector import InterferometerList
+from utils import get_base_log_dir
+
 class RunMode(Enum):
     RUN    = "run"
     REUSE  = "reuse"
@@ -41,23 +43,24 @@ class Method(ABC):
         # )
         
         sample = bilby.run_sampler(
-            likelihood = likelihood,
-            priors     = self.prior,
-            sampler    = self.config.sampler,
-            nlive      = self.config.nlive, 
-            dlogz      = self.config.dlogz, #stopping criterion for the evidence
-            sample     = self.config.sample,  
-            walks      = self.config.walks, #steps for MCMC sampeler to select new candidates  
-            bound      = self.config.bound,
-            maxmcmc    = self.config.maxmcmc,
-            nact       = self.config.nact, #amount of steps is tuned so autocorr is small enough 
-            resume     = resume,
-            clean      = clean,
+            likelihood   = likelihood,
+            priors       = self.prior,
+            sampler      = self.config.sampler,
+            nlive        = self.config.nlive, 
+            dlogz        = self.config.dlogz, #stopping criterion for the evidence
+            sample       = self.config.sample,  
+            walks        = self.config.walks, #steps for MCMC sampeler to select new candidates  
+            bound        = self.config.bound,
+            maxmcmc      = self.config.maxmcmc,
+            nact         = self.config.nact, #amount of steps is tuned so autocorr is small enough 
+            resume       = resume,
+            clean        = clean,
             # live_points= live_points, #TODO: DELETE
-            outdir     = "logs/log_ET_dynesty_" + self.pipeline_type_code + self.nameExtra,
-            label      = self.pipeline_type_code,
-            npool      = self.config.npool,
-            queue_size = self.config.npool
+            outdir       = str(self.getSampleOutdir()),
+            label        = self.pipeline_type_code,
+            npool        = self.config.npool,
+            queue_size   = self.config.npool,
+            print_method = 'interval-60'
         )
         results = self.updateResults(sample,likelihood)
         return results
@@ -66,7 +69,7 @@ class Method(ABC):
         #main entry point
         self.logger.info("$$$ Generating posterior samples")
         if runMode == RunMode.REUSE:
-            outdir = "logs/log_ET_dynesty_" + self.pipeline_type_code + "/" + self.pipeline_type_code + "_result.json"
+            outdir = str(self.getResultPath(self.nameExtra))
             result = read_in_result(outdir) #outdir is also used in sampeler
             result = self.postprocessReusedResult(result)
             
@@ -103,6 +106,15 @@ class Method(ABC):
     def postprocessReusedResult(self, result):
         # default Nothing happens
         return result
+    
+    def getSampleOutdir(self,nameExtra):
+        base    = get_base_log_dir()
+        dirname = f"logs/log_dynesty_{self.pipeline_type_code}_{nameExtra}"
+        return base / dirname
+    
+    def getResultPath(self):
+        outdir = self.getSampleOutdir(self.nameExtra)
+        return outdir + f"/{self.pipeline_type_code}_result.json"
 
 
 ##################
@@ -135,14 +147,33 @@ class Method(ABC):
         )
         
         ### WJ: 04/01/25 fix priors for debugging
-        # fixed_priors   = ["tilt_1", "tilt_2", "phi_12", "phi_jl", "a_1", "a_2"]
-        # waveFormParams = self.scenario.GetWaveFormParams()
-        # for k in fixed_priors:
-        #     if k in prior:
-        #         self.logger.info(f"$$$ : making prior delta {k}")
-        #         value = waveFormParams[waveformIdx].get(k)
-        #         prior[k] = DeltaFunction(value, name=k)
-        
+        fixed_priors   = ["chirp_mass","geocent_time","tilt_1", "tilt_2", "phi_12", "phi_jl", "a_1", "a_2"]
+        waveFormParams = self.scenario.GetWaveFormParams()
+        for k in fixed_priors:
+            if k in prior:
+                value = waveFormParams[waveformIdx].get(k)
+                if self.config.use_deltas:
+                    self.logger.info(f"$$$ making prior delta {k}")
+                    prior[k] = DeltaFunction(value, name=k)
+                else:
+                    upperDiff  = prior[k].maximum - value
+                    lowerDiff  = value - prior[k].minimum
+                    priorRange = (prior[k].maximum - prior[k].minimum)
+                    tolerance  = 1e-3
+                    delta      = self.config.restriction_str * min(upperDiff,lowerDiff)
+                    #deal with boundaries
+                    if upperDiff < tolerance:
+                        priorMin = value - priorRange*self.config.restriction_str
+                        priorMax = value + delta
+                    elif lowerDiff < tolerance:
+                        priorMin = value - delta
+                        priorMax = value + priorRange*self.config.restriction_str
+                    else:
+                        priorMax = value + delta
+                        priorMin = value - delta
+                    prior[k].maximum = priorMax
+                    prior[k].minimum = priorMin
+                    self.logger.info(f"$$$ tightening prior {k}, with bounds: {value + delta} and {value - delta}")
         return prior
     
     # needed for joint parameter estimation

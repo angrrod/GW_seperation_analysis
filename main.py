@@ -6,15 +6,12 @@ import utils
 from scenario import ScenarioConfig
 import argparse
 from Pipeline import Pipeline_type
-import bilby
-from scenario import GWScenario
-import numpy as np
 
 ###########################
 ####     Main Loop     ####
 ###########################
 
-def Main(mode: RunMode, pipeline_type):
+def Main(mode: RunMode, pipeline_type,RunDiagnostics = False):
     #start_from_chekpt only used for continuing when crash,has happend
     """_summary_
     Args:
@@ -29,7 +26,7 @@ def Main(mode: RunMode, pipeline_type):
     MethodConf                 = MethodConfig()
     results                    = defaultdict(dict, {mt.code: {} for mt in Pipeline_type}) #used for measuring overlap etc with the joint.S
     
-    scenario,logger,_,data_dir = setUpLoggerScenario(ScenConfig)
+    scenario,logger,_,data_dir = utils.setUpLoggerScenario(ScenConfig)
     
     if pipeline_type is None:
         raise ValueError(f"Unknown method '{pipeline_type}'")
@@ -44,7 +41,7 @@ def Main(mode: RunMode, pipeline_type):
         results[pipeline_type.code]['runTime'] = runTime
         method_meta                            = {"runTime" : runTime}
         
-        if pipeline_type == Pipeline_type.SINGLE:
+        if pipeline_type == Pipeline_type.SINGLE and RunDiagnostics == True:
             dataPipeline.log_diagnostic_tests(simulation_results["waveFormA"],ifos_override = None)
         dataPipeline.writeMethodResult(data_dir,method_meta,simulation_results)
         
@@ -90,45 +87,6 @@ def parse_run_mode(s: str) -> RunMode:
         f"Unknown run mode '{s}'. Valid modes: {', '.join(valid)}"
     )
     
-def setUpLoggerScenario(ScenConfig):
-    #set-up plotting dirs
-    if "VSC_DATA" in os.environ:
-        base    = os.environ.get("GW_INP_DIR", os.environ["VSC_DATA"])
-        out_dir = os.path.join(base,"postProcessing")
-        log_dir = os.path.join(base,"logs")
-    else:
-        out_dir = "postProcessing"
-        log_dir = "logs"
-    
-    plot_dir = os.path.join(out_dir, "Plots")
-    os.makedirs(plot_dir, exist_ok=True)
-    
-    #Logger
-    bilby.core.utils.setup_logger(
-        log_level="INFO", #DEBUG
-        label="my_run", 
-        outdir=log_dir,
-    )
-    logger = bilby.core.utils.logger
-    logger.info("$$$ start_run")
-    
-    scenario = GWScenario(logger, ScenConfig)
-    scenario.setUpScenario()
-    
-    #test ifo's
-    for ifo in scenario.ifos:
-        td = ifo.strain_data.time_domain_strain
-        scenario.logger.info(f"{ifo.name}: td finite={np.isfinite(td).all()}, std={np.std(td):.3e}, maxabs={np.max(np.abs(td)):.3e}")
-
-        fd = ifo.strain_data.frequency_domain_strain
-        scenario.logger.info(f"{ifo.name}: fd finite={np.isfinite(fd).all()}, std={np.std(fd):.3e}")
-
-        psd = ifo.power_spectral_density.psd_array
-        scenario.logger.info(f"{ifo.name}: psd finite={np.isfinite(psd).all()}, min={np.min(psd):.3e}, max={np.max(psd):.3e}")
-
-    return scenario,logger,plot_dir,out_dir
-
-
 ###########################
 ###   Run actual Code   ###
 ###########################

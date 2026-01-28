@@ -15,7 +15,7 @@ class SingleLikelihoodMethod(Method):
         self._logl_diag_state = {"did_header": set()} # for logging purposes
 
         
-    def getLikelihood_wrapped(self, ifos_override):
+    def getLikelihood_wrapped(self, ifos_override,newPriors:bool = False):
         #code used in residual calculations
         ifos = self.parseIfos_override(ifos_override)
         
@@ -23,13 +23,19 @@ class SingleLikelihoodMethod(Method):
         if self.prior is None:
             raise NotImplementedError("prior is not implemented")
         
+        #after marginalization the likelihood needs to be recreated for testing (in singleLikelihood pipeline)
+        elif newPriors:
+            prior = self.GetSinglePrior()
+        else:
+            prior = self.prior
+        
         if self.scenario.config.UseRelBinning:
             fiducial_parameters = self.scenario.injct_params_waves[0].copy()
             fiducial_parameters["time_jitter"] = 0.0
             likelihood = bilby.gw.likelihood.RelativeBinningGravitationalWaveTransient(  #GravitationalWaveTransient
                 interferometers            = ifos,
                 waveform_generator         = self.wg_rel,
-                priors                     = self.prior,
+                priors                     = prior,
                 fiducial_parameters        = fiducial_parameters,
                 update_fiducial_parameters = True,
                 distance_marginalization   = False,
@@ -49,11 +55,11 @@ class SingleLikelihoodMethod(Method):
             )
         return likelihood
     
-    def getLikelihood(self,ifos_override,wrapped:bool = False):
+    def getLikelihood(self,ifos_override,wrapped:bool = False,newPriors:bool = False):
         # wrapper object of the likelihood
         # build the real likelihood object from Method
         # wrapped will always be false, it is old code that is used for logging
-        like = self.getLikelihood_wrapped(ifos_override)
+        like = self.getLikelihood_wrapped(ifos_override,newPriors)
         if wrapped:
             # attach diagnostic logging to this likelihood object
             theta_inj = self.scenario.injct_params_waves[0].copy()
@@ -374,7 +380,7 @@ class SingleLikelihoodMethod(Method):
         
     def log_diagnostic_tests(self,result,ifos_override):
         #tests for set-up function
-        likelihood  = self.getLikelihood(ifos_override)
+        likelihood  = self.getLikelihood(ifos_override,newPriors = True)
         inj = self.scenario.injct_params_waves[0].copy()
         inj = {k: v for k, v in inj.items() if k in likelihood.priors}
         
