@@ -7,7 +7,7 @@ import bilby
 import torch
 from .Pipeline import Pipeline
 from bilby.gw.utils import noise_weighted_inner_product
-from utils import get_base_log_dir
+from utils import get_base_log_dir,get_base_work_dir
 
 from config.option import parse
 import trainer.denoise_pytorch_trainer
@@ -135,14 +135,13 @@ class TasNetPipeline(Pipeline):
         # 1) Instantiate architectures (random init is fine; checkpoint will overwrite)
         denoise = trainer.denoise_pytorch_trainer.MyModel().to(device)
 
-        opt = parse("/root/phd/GW_seperation_analysis/External/gravitational-wave-separation/config/Dual_RNN/train_rnn.yml")
+        opt = parse(f"{get_base_work_dir()}/External/gravitational-wave-separation/config/Dual_RNN/train_rnn.yml")
         sep = Dual_RNN_model(**opt["Dual_Path_RNN"]).to(device)
-
         # 2) Combine
         e2e = CombinedModel(denoise, sep).to(device)
 
         # 3) Load END-TO-END checkpoint 
-        ckpt = torch.load("/root/phd/GW_seperation_analysis/External/end_to_end_model/best_end2end.pt", map_location=device)
+        ckpt = torch.load(f"{get_base_work_dir()}/External/end_to_end_model/best_end2end.pt", map_location=device)
         state = self._strip_prefix_if_present(ckpt["model_state_dict"])
         missing, unexpected = e2e.load_state_dict(state, strict=False)
         if missing:

@@ -3,8 +3,8 @@
 #SBATCH --account=lp_biolearning
 #SBATCH --clusters=genius         # Specify the target cluster; adjust if needed
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --time=5:00:00
+#SBATCH --cpus-per-task=18
+#SBATCH --time=24:00:00
 #SBATCH --output=HPC_output_logs/TestJob_%j.out
 #SBATCH --error=HPC_output_logs/TestJob_%j.err
 
@@ -18,7 +18,7 @@ source "$VSC_DATA/miniconda3/etc/profile.d/conda.sh"
 conda activate "$VSC_DATA/GW_separation/GW_env"
 
 #lower than cpu per tasks
-export GW_NPOOL=6  
+export GW_NPOOL=16  
 export GW_INP_DIR="$VSC_DATA/GW_separation"
 
 cd "$VSC_DATA/GW_separation"

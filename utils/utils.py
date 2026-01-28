@@ -4,10 +4,6 @@ import corner
 import pandas as pd
 import numpy as np
 from scipy.stats import gaussian_kde,entropy
-import bilby
-import os
-from scenario import GWScenario
-from pathlib import Path
 
 ### helper functions ###
 def createCornerPlot(samps,params,color,fig,truths):
@@ -147,53 +143,3 @@ def getMaximumLikelihood(result):
     idx_ml    = posterior["log_likelihood"].idxmax()
     ml_sample = posterior.loc[idx_ml]
     return ml_sample 
-
-def setUpLoggerScenario(ScenConfig):
-    #set-up plotting dirs
-    log_dir = get_base_log_dir()
-    out_dir = get_postprocessing_dir()
-    
-    log_dir.mkdir(parents=True, exist_ok=True)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    
-    plot_dir = os.path.join(out_dir, "Plots")
-    os.makedirs(plot_dir, exist_ok=True)
-    
-    #Logger
-    bilby.core.utils.setup_logger(
-        log_level="INFO", #DEBUG
-        label="my_run", 
-        outdir=log_dir,
-    )
-    logger = bilby.core.utils.logger
-    logger.info("$$$ start_run")
-    
-    scenario = GWScenario(logger, ScenConfig)
-    scenario.setUpScenario()
-    
-    #test ifo's
-    for ifo in scenario.ifos:
-        td = ifo.strain_data.time_domain_strain
-        scenario.logger.info(f"{ifo.name}: td finite={np.isfinite(td).all()}, std={np.std(td):.3e}, maxabs={np.max(np.abs(td)):.3e}")
-
-        fd = ifo.strain_data.frequency_domain_strain
-        scenario.logger.info(f"{ifo.name}: fd finite={np.isfinite(fd).all()}, std={np.std(fd):.3e}")
-
-        psd = ifo.power_spectral_density.psd_array
-        scenario.logger.info(f"{ifo.name}: psd finite={np.isfinite(psd).all()}, min={np.min(psd):.3e}, max={np.max(psd):.3e}")
-
-    return scenario,logger,plot_dir,out_dir
-
-def get_base_log_dir() -> Path:
-    return get_base_work_dir() / "logs"
-
-def get_postprocessing_dir() -> Path:
-    return get_base_work_dir() / "postProcessing"
-
-def get_base_work_dir() -> Path:
-    """
-    Root directory for all generated artifacts (logs, postProcessing, results, …).
-    """
-    if "VSC_DATA" in os.environ:
-        return Path(os.environ.get("GW_INP_DIR", os.environ["VSC_DATA"]))
-    return Path(".")

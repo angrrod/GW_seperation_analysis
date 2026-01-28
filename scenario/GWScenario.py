@@ -6,14 +6,21 @@ from gwpy.timeseries import TimeSeries
 import matplotlib.pyplot as plt
 from dataclasses import asdict
 from scenario.ScenarioConfig import ScenarioConfig
-import os
-
+import os, json, datetime
+from pathlib import Path
+import h5py
+from dataclasses import asdict
+from utils import get_base_log_dir
 class GWScenario:
-    def __init__(self, logger ,config : ScenarioConfig, injct_params_waves = None):
+    def __init__(self, logger ,scenarioId, config : ScenarioConfig, injct_params_waves = None):
         self.logger             = logger
         self.config             = config
+        self.workdir            = get_base_log_dir() / "scenarioData"
+        self.scenarioId         = scenarioId
         if injct_params_waves is None:
             self.injct_params_waves = self.GetWaveFormParams()
+        else:
+            self.injct_params_waves = injct_params_waves
             
         #set-up plotting dirs separate from post processing dir
         #parameters to be initialized during set_up:
@@ -33,12 +40,17 @@ class GWScenario:
             
         self.ifos = self._getInterferrometerSetUp(PSD_ET,PSD_CE)
         
-        #add gaussian noise
-        self.ifos.set_strain_data_from_power_spectral_densities(
-            sampling_frequency = self.config.sampling_frequency,
-            duration           = self.config.duration,
-            start_time         = 0.0
-        )
+        #load gaussian noise
+        if self.getScenarioPath().exists():
+            self.loadScenario()
+        else:
+            # new scenario create gaussian noise
+            self.ifos.set_strain_data_from_power_spectral_densities(
+                sampling_frequency = self.config.sampling_frequency,
+                duration           = self.config.duration,
+                start_time         = self.config.start_time
+            )
+            self.saveScenario()
         
         #noise background used for plotting
         self.noise_td = []
@@ -293,5 +305,74 @@ class GWScenario:
             return bilby.gw.detector.PowerSpectralDensity.from_power_spectral_density_file(
                 psd_file=psd_name
             )
-    
 
+    def getScenarioPath(self) -> Path:
+        self.workdir.mkdir(parents=True, exist_ok=True)
+        return self.workdir / f"Scenario_{self.scenarioId}.h5"
+        
+    def saveScenario(self):
+        # save the ifos set-up to deal with good reproducability 
+        dir = self.getScenarioPath()
+        self.logger.info(f"$$$ Save scenario to {dir}")
+        
+        meta_config = asdict(self.config)
+        meta_inj = getattr(self, "injct_params_waves", None)
+        with h5py.File(str(dir), "w") as f:
+            
+            # general meta data currently not used
+            f.create_dataset("/meta/created_utc", data=np.bytes_(
+                datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z"
+            ))
+            f.create_dataset("/meta/scenario_config_json",
+                            data=np.bytes_(json.dumps(meta_config)))
+            f.create_dataset("/meta/injections_json",
+                            data=np.bytes_(json.dumps(meta_inj)))
+            
+            # construct the strain data
+            g_ifos = f.require_group("ifos")
+            for ifo in self.ifos:
+                g = g_ifos.require_group(ifo.name)
+                td = np.asarray(ifo.strain_data.time_domain_strain, dtype=np.float64) #translate to numpy
+                if "strain_td" in g: #replace if it already esists
+                    del g["strain_td"]
+                g.create_dataset("strain_td", data=td, compression="gzip", compression_opts=4)
+                
+        
+    def loadScenario(self):
+        """
+        Load ONLY the realized strain (time-domain) for the currently-constructed self.ifos
+        from an HDF5 file and overwrite each IFO's strain_data accordingly.
+
+        Assumes:
+        - self.ifos is already created (e.g., via _getInterferrometerSetUp(...))
+        - HDF5 layout: /ifos/<IFO_NAME>/strain_td and scalar metadata
+        """
+        dir = self.getScenarioPath()
+        self.logger.info(f"$$$ Loaded scenario from {dir}")
+        if not dir.exists():
+            raise FileNotFoundError(dir)
+        if self.ifos is None:
+            raise RuntimeError("self.ifos is not initialized. Build interferometers before loading strain.")
+        
+        with h5py.File(str(dir), "r") as f:
+            if "ifos" not in f:
+                raise KeyError(f"Group '/ifos' missing in {dir}")
+
+            g_ifos = f["ifos"]
+
+            for ifo in self.ifos:
+                name = ifo.name
+                h5_group_path = f"ifos/{name}"
+                if name not in g_ifos:
+                    raise KeyError(f"IFO group '/{h5_group_path}' missing in {dir}")
+
+                g = g_ifos[name]
+                if "strain_td" not in g:
+                    raise KeyError(f"Dataset '/{h5_group_path}/strain_td' missing in {dir}")
+
+                ifo.strain_data.set_from_time_domain_strain(
+                    time_domain_strain = np.asarray(g["strain_td"], dtype=np.float64),
+                    sampling_frequency = self.config.sampling_frequency,
+                    duration           = self.config.duration,
+                    start_time         = self.config.start_time,
+                )

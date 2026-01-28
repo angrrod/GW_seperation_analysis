@@ -1,11 +1,13 @@
 import time
 from collections import defaultdict
-import os
 from methods import RunMode, MethodConfig
-import utils
-from scenario import ScenarioConfig
+from scenario import ScenarioConfig, GWScenario
 import argparse
 from Pipeline import Pipeline_type
+import bilby
+import os
+from utils import get_postprocessing_dir,get_base_log_dir
+import numpy as np
 
 ###########################
 ####     Main Loop     ####
@@ -26,7 +28,7 @@ def Main(mode: RunMode, pipeline_type,RunDiagnostics = False):
     MethodConf                 = MethodConfig()
     results                    = defaultdict(dict, {mt.code: {} for mt in Pipeline_type}) #used for measuring overlap etc with the joint.S
     
-    scenario,logger,_,data_dir = utils.setUpLoggerScenario(ScenConfig)
+    scenario,logger,_,data_dir = setUpLoggerScenario(ScenConfig)
     
     if pipeline_type is None:
         raise ValueError(f"Unknown method '{pipeline_type}'")
@@ -44,6 +46,43 @@ def Main(mode: RunMode, pipeline_type,RunDiagnostics = False):
         if pipeline_type == Pipeline_type.SINGLE and RunDiagnostics == True:
             dataPipeline.log_diagnostic_tests(simulation_results["waveFormA"],ifos_override = None)
         dataPipeline.writeMethodResult(data_dir,method_meta,simulation_results)
+
+def setUpLoggerScenario(ScenConfig):
+    #set-up plotting dirs
+    log_dir = get_base_log_dir()
+    out_dir = get_postprocessing_dir()
+    
+    log_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    
+    plot_dir = os.path.join(out_dir, "Plots")
+    os.makedirs(plot_dir, exist_ok=True)
+    
+    #Logger
+    bilby.core.utils.setup_logger(
+        log_level="INFO", #DEBUG
+        label="my_run", 
+        outdir=log_dir,
+    )
+    logger = bilby.core.utils.logger
+    logger.info("$$$ start_run")
+    
+    scenarioId = 1  #used to load several scenario's
+    scenario = GWScenario(logger, scenarioId, ScenConfig)
+    scenario.setUpScenario()
+    
+    #test ifo's
+    for ifo in scenario.ifos:
+        td = ifo.strain_data.time_domain_strain
+        scenario.logger.info(f"{ifo.name}: td finite={np.isfinite(td).all()}, std={np.std(td):.3e}, maxabs={np.max(np.abs(td)):.3e}")
+
+        fd = ifo.strain_data.frequency_domain_strain
+        scenario.logger.info(f"{ifo.name}: fd finite={np.isfinite(fd).all()}, std={np.std(fd):.3e}")
+
+        psd = ifo.power_spectral_density.psd_array
+        scenario.logger.info(f"{ifo.name}: psd finite={np.isfinite(psd).all()}, min={np.min(psd):.3e}, max={np.max(psd):.3e}")
+
+    return scenario,logger,plot_dir,out_dir
         
 def parse_args():
     parser = argparse.ArgumentParser(

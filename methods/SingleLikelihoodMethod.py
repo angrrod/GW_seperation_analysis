@@ -37,7 +37,7 @@ class SingleLikelihoodMethod(Method):
                 waveform_generator         = self.wg_rel,
                 priors                     = prior,
                 fiducial_parameters        = fiducial_parameters,
-                update_fiducial_parameters = True,
+                update_fiducial_parameters = False, #no optimization is done since we use the truth already
                 distance_marginalization   = False,
                 phase_marginalization      = True,
                 time_marginalization       = True,

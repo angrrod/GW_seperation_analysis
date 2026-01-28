@@ -56,7 +56,7 @@ class Method(ABC):
             resume       = resume,
             clean        = clean,
             # live_points= live_points, #TODO: DELETE
-            outdir       = str(self.getSampleOutdir()),
+            outdir       = str(self.getSampleOutdir(self.nameExtra)),
             label        = self.pipeline_type_code,
             npool        = self.config.npool,
             queue_size   = self.config.npool,
