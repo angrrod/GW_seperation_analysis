@@ -19,3 +19,5 @@ h5py>=3.8
 # Utilities
 tqdm>=4.64
 tables>=3.9
+
+torch

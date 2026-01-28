@@ -110,7 +110,7 @@ class TasNetPipeline(Pipeline):
     
     def getAmplitudeDir(self):
         base    = get_base_log_dir()
-        dirname = f"{self.singleSampler1.getSampleOutdir("")}_Amplitude"
+        dirname = f"{self.singleSampler1.getSampleOutdir('')}_Amplitude"
         return base / dirname
     
     def getOptimalAmplitudes(self,waveForms,ifo):

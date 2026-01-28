@@ -69,7 +69,7 @@ class Method(ABC):
         #main entry point
         self.logger.info("$$$ Generating posterior samples")
         if runMode == RunMode.REUSE:
-            outdir = str(self.getResultPath(self.nameExtra))
+            outdir = str(self.getResultPath())
             result = read_in_result(outdir) #outdir is also used in sampeler
             result = self.postprocessReusedResult(result)
             
@@ -109,12 +109,11 @@ class Method(ABC):
     
     def getSampleOutdir(self,nameExtra):
         base    = get_base_log_dir()
-        dirname = f"logs/log_dynesty_{self.pipeline_type_code}_{nameExtra}"
-        return base / dirname
+        return base / f"log_dynesty_{self.pipeline_type_code}_{nameExtra}"
     
     def getResultPath(self):
         outdir = self.getSampleOutdir(self.nameExtra)
-        return outdir + f"/{self.pipeline_type_code}_result.json"
+        return outdir / f"{self.pipeline_type_code}_result.json"
 
 
 ##################
