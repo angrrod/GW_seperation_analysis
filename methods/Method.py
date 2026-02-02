@@ -185,7 +185,7 @@ class Method(ABC):
         for key, prior in base.items():
             priors[f"{key}_A"] = copy.deepcopy(prior)
             priors[f"{key}_B"] = copy.deepcopy(prior)
-
+            
         return priors
     
     def _getRBWaveForm(self):

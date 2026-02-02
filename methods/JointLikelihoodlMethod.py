@@ -34,6 +34,17 @@ class JointLikelihoodlMethod(Method):
             time_reference     = "geocenter",
             delta              = 0.001,  # RB binning tolerance
         )
+        _base_log_likelihood_ratio = likelihood.log_likelihood_ratio
+        
+        def wrapped_log_likelihood_ratio(parameters=None):
+            # wrapped likelihood, add constraint on the prior to force the likelihood
+            p = parameters if parameters is not None else likelihood.parameters
+            if p["geocent_time_A"] >= p["geocent_time_B"]:
+                return -float("inf")
+            
+            return _base_log_likelihood_ratio(parameters=parameters)
+        
+        likelihood.log_likelihood_ratio = wrapped_log_likelihood_ratio
         return likelihood
         
     def updateResults(self,result,likelihood = None):

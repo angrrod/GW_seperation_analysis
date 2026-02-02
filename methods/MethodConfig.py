@@ -30,5 +30,5 @@ class MethodConfig:
     npool: int            = field(default_factory=_default_npool)   #18
     maxmcmc: int          = None #20000   #needed for MCMC sampeling, not needed for dynesty sampeling
     restrict_prior: bool  = True  # restrict the priors to a small value
-    restriction_str:float = 0.5     #1  tunes the strenght of the restriction 
+    restriction_str:float = 0.1     #1  tunes the strenght of the restriction 
     use_deltas:bool       = False
