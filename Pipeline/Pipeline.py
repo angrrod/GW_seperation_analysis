@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from scenario import GWScenario
-from methods import MethodConfig,RunMode
+from methods import DynestyConfig,PymcNutsConfig,RunMode
 from pathlib import Path
 import json
 from .Pipeline_type import Pipeline_type
@@ -8,11 +8,15 @@ import pandas as pd
 
 
 class Pipeline(ABC):
-    def __init__(self,logger,scenario:GWScenario,config:MethodConfig):
+    def __init__(self,logger,scenario:GWScenario):
         self.logger        = logger
         self.scenario      = scenario
-        self.config        = config
+        self.config        = self.getConfig()
         self.pipeline_type = None
+        
+    @abstractmethod
+    def getConfig(self):
+        raise NotImplementedError
         
     @abstractmethod
     def run(self,runMode:RunMode):

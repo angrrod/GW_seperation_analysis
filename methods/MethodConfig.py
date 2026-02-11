@@ -19,7 +19,7 @@ def _default_npool() -> int:
     return max(1, n)
 
 @dataclass(frozen=True)
-class MethodConfig:
+class DynestyConfig:
     sampler:str           = "dynesty"
     nlive: int            = 2000 #4000
     dlogz: float          = 0.01 #0.1    #stopping criterion for the evidence
@@ -32,3 +32,14 @@ class MethodConfig:
     restrict_prior: bool  = True  # restrict the priors to a small value
     restriction_str:float = 0.1     #1  tunes the strenght of the restriction 
     use_deltas:bool       = False
+
+@dataclass(frozen=True)
+class PymcNutsConfig:
+    sampler:str  = "numpyro"
+    sampler_name = "NUTS",
+    draws: int   = 10 #total steps = draws +tune
+    tune: int    = 2000
+    chains: int  = 4
+    cores: int   = 4
+    target_accept: float = 0.8
+    max_treedepth: int = 10

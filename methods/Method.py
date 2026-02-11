@@ -3,7 +3,6 @@ import bilby
 from bilby.core.result import read_in_result
 import copy
 from scenario import GWScenario
-from .MethodConfig import MethodConfig
 from bilby.core.prior import DeltaFunction
 from bilby.core.result import read_in_result
 from enum import Enum
@@ -19,7 +18,7 @@ class RunMode(Enum):
     CHEKPT = "checkpoint"
     
 class Method(ABC):
-    def __init__(self,scenario:GWScenario,logger,config:MethodConfig,pipeline_type_code:str):
+    def __init__(self,scenario:GWScenario,logger,config,pipeline_type_code:str):
         self.scenario           = scenario
         self.logger             = logger
         self.config             = config

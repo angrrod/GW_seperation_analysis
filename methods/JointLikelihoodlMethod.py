@@ -1,11 +1,10 @@
 import bilby
 from jointRB import OverlappingSignalsRelBinning
 from .Method import Method
-from .MethodConfig import MethodConfig
 from scenario import GWScenario
 
 class JointLikelihoodlMethod(Method):
-    def __init__(self,scenario:GWScenario,logger,config:MethodConfig,pipeline_type_code:str):
+    def __init__(self,scenario:GWScenario,logger,config,pipeline_type_code:str):
         super().__init__(scenario, logger, config, pipeline_type_code)
         self.nameExtra = ""
         

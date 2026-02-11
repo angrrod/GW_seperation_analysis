@@ -1,6 +1,6 @@
 import time
 from collections import defaultdict
-from methods import RunMode, MethodConfig
+from methods import RunMode
 from scenario import ScenarioConfig
 import argparse
 from Pipeline import Pipeline_type
@@ -22,7 +22,6 @@ def Main(mode: RunMode, pipeline_type,RunDiagnostics = False):
     os.environ["OPENBLAS_NUM_THREADS"] = "1"
     
     ScenConfig                 = ScenarioConfig()
-    MethodConf                 = MethodConfig()
     results                    = defaultdict(dict, {mt.code: {} for mt in Pipeline_type}) #used for measuring overlap etc with the joint.S
     
     scenario,logger,_,data_dir = setUpLoggerScenario(ScenConfig)
@@ -31,7 +30,7 @@ def Main(mode: RunMode, pipeline_type,RunDiagnostics = False):
         raise ValueError(f"Unknown method '{pipeline_type}'")
     else:
         logger.info(f"$$$ Running method: {pipeline_type.code}")
-        dataPipeline  = pipeline_type.type(logger,scenario,MethodConf)
+        dataPipeline  = pipeline_type.type(logger,scenario)
         
         start                                  = time.process_time() #in seconds
         simulation_results                     = dataPipeline.run(mode)

@@ -1,4 +1,4 @@
-from methods import MethodConfig, SingleLikelihoodMethod, RunMode
+from methods import DynestyConfig, SingleLikelihoodMethod, RunMode
 from .Pipeline_type import Pipeline_type
 from scenario import GWScenario
 import copy
@@ -15,11 +15,11 @@ from model.model_rnn import Dual_RNN_model
 from trainer.end_to_end_denoise_saparate_trainer import CombinedModel
 
 class TasNetPipeline(Pipeline):
-    def __init__(self,logger,scenario:GWScenario,config:MethodConfig):
-        super().__init__(logger, scenario, config)
+    def __init__(self,logger,scenario:GWScenario):
+        super().__init__(logger, scenario)
         self.pipeline_type    = Pipeline_type.TASNET
-        self.singleSampler1 = SingleLikelihoodMethod(scenario, logger,config,self.pipeline_type.code,"_1")
-        self.singleSampler2 = SingleLikelihoodMethod(scenario, logger,config,self.pipeline_type.code,"_2")
+        self.singleSampler1 = SingleLikelihoodMethod(scenario, logger,self.config,self.pipeline_type.code,"_1")
+        self.singleSampler2 = SingleLikelihoodMethod(scenario, logger,self.config,self.pipeline_type.code,"_2")
         self.splitter       = self.getTasNetSplitter() #can be used to analyze other splitters
     
     def run(self,runMode:RunMode):
@@ -183,3 +183,6 @@ class TasNetPipeline(Pipeline):
         )
         logl = -0.5 * rr
         return ifo_copy,float(logl)
+    
+    def getConfig(self):
+        return DynestyConfig()
