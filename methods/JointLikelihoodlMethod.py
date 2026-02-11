@@ -34,17 +34,18 @@ class JointLikelihoodlMethod(Method):
             time_reference     = "geocenter",
             delta              = 0.001,  # RB binning tolerance
         )
-        _base_log_likelihood_ratio = likelihood.log_likelihood_ratio
         
-        def wrapped_log_likelihood_ratio(parameters=None):
-            # wrapped likelihood, add constraint on the prior to force the likelihood
-            p = parameters if parameters is not None else likelihood.parameters
-            if p["geocent_time_A"] >= p["geocent_time_B"]:
-                return -float("inf")
+        # WJ 03/02/2026: code used for enforcing symmetry on the likelihood
+        # _base_log_likelihood_ratio = likelihood.log_likelihood_ratio
+        # def wrapped_log_likelihood_ratio(parameters=None):
+        #     # wrapped likelihood, add constraint on the prior to force the likelihood
+        #     p = parameters if parameters is not None else likelihood.parameters
+        #     if p["geocent_time_A"] >= p["geocent_time_B"]:
+        #         return -float("inf")
             
-            return _base_log_likelihood_ratio(parameters=parameters)
+        #     return _base_log_likelihood_ratio(parameters=parameters)
         
-        likelihood.log_likelihood_ratio = wrapped_log_likelihood_ratio
+        # likelihood.log_likelihood_ratio = wrapped_log_likelihood_ratio
         return likelihood
         
     def updateResults(self,result,likelihood = None):
@@ -63,3 +64,17 @@ class JointLikelihoodlMethod(Method):
     def getPrior(self):
         self.logger.info("$$$ getting the prior")
         return self.getJointPriors()
+    
+    def log_diagnostic_tests(self,result,ifos_override):
+        #tests for set-up function
+        likelihood  = self.getLikelihood(ifos_override)
+        inj = self.scenario.injct_params_waves[0].copy()
+        inj = {k: v for k, v in inj.items() if k in likelihood.priors}
+        
+        theta_inj = self.scenario.injct_params_waves[0].copy()
+        # theta_ml  = self.getMaximumLikelihood(result)
+        
+        self._missing_dropped_keys_test(likelihood)
+        self._bad_prior_support_test(likelihood,inj)
+        self._probe_local_logl_test(likelihood,theta_inj)
+        # self._ML_inj_comparison_test(likelihood,inj,result)

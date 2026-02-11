@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 @dataclass(frozen=True)
 class ScenarioConfig:
-    waveform_approximant: str  = "IMRPhenomPv2" #IMRPhenomPv2  IMRPhenomD
+    waveform_approximant: str  = "IMRPhenomD" #IMRPhenomPv2  IMRPhenomD
     minimum_frequency: float   = 20.0 #10
     sampling_frequency: float  = 2048.0 #4096
     reference_frequency: float = 50.0 #20
-    duration: float            = 8.0 #64
+    duration: float            = 16.0 #64
     start_time:float           = 0.0
     time_delta: float          = 3.0 #time between the 2 signals
     ASD_file_name_ET: str      = "ET_D"

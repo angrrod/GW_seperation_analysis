@@ -1,10 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=TestJob
 #SBATCH --account=lp_biolearning
-#SBATCH --clusters=genius         # Specify the target cluster; adjust if needed
+#SBATCH --clusters=wice            # <-- run on wICE
+#SBATCH --partition=batch_icelake  # optional but recommended (adjust if you use another partition)
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=18
-#SBATCH --time=24:00:00
+#SBATCH --time=48:00:00
 #SBATCH --output=HPC_output_logs/TestJob_%j.out
 #SBATCH --error=HPC_output_logs/TestJob_%j.err
 

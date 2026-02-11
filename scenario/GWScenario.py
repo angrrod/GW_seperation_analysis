@@ -37,7 +37,7 @@ class GWScenario:
         
         PSD_CE = self.load_psd(self.config.ASD_file_name_CE +"_PSD.txt")
         PSD_ET = self.load_psd(self.config.ASD_file_name_ET +"_PSD.txt")
-            
+        
         self.ifos = self._getInterferrometerSetUp(PSD_ET,PSD_CE)
         
         #load gaussian noise
@@ -82,7 +82,8 @@ class GWScenario:
             "luminosity_distance",
             "theta_jn", "inclination",
             "phase", "coa_phase",
-            "geocent_time"]: 
+            "geocent_time"
+            ]: 
             if k in converted[0]:
                 self.logger.info(f"$$$ {k}, {converted[0].get(k)}")
                 
@@ -231,16 +232,19 @@ class GWScenario:
         chirp_1, q_1 = self._massesToChirpAndQ(m1_1, m2_1)
         chirp_2, q_2 = self._massesToChirpAndQ(m1_2, m2_2)
         
+        self.logger.info(f"$$$ chirpmass {chirp_1} and mass ratio {q_1} for waveform 1")
+        self.logger.info(f"$$$ chirpmass {chirp_2} and mass ratio {q_2} for waveform 1")
+        
         injct_params_wave_1 = dict(
             chirp_mass          = chirp_1,
             mass_ratio          = q_1,
             a_1                 = 0.0,  #part of the spin of the black hole
             a_2                 = 0.0,
-            tilt_1              = 1e-6, #part of the spin of the black hole
-            tilt_2              = 1e-6,
-            phi_12              = 1e-6,  #part of the spin of the black hole
-            phi_jl              = 1e-6,
-            luminosity_distance = 5500.0, #2000
+            tilt_1              = 0.0, #part of the spin of the black hole
+            tilt_2              = 0.0,
+            phi_12              = 0.0,  #part of the spin of the black hole
+            phi_jl              = 0.0,
+            luminosity_distance = 3000.0, #2000
             theta_jn            = 0.2, #angle of angular momentum
             psi                 = 2.659,  #angle of polarization
             phase               = 0.9,
@@ -251,13 +255,13 @@ class GWScenario:
         injct_params_wave_2 = dict(
             chirp_mass          = chirp_2,
             mass_ratio          = q_2,
-            a_1                 = 0.2,  #part of the spin of the black hole
-            a_2                 = 0.9,
-            tilt_1              = 0.2, #part of the spin of the black hole
-            tilt_2              = 2.0,
-            phi_12              = 0.7,  #part of the spin of the black hole
-            phi_jl              = 1.3,
-            luminosity_distance = 6000.0, #2000
+            a_1                 = 0.0,  #part of the spin of the black hole
+            a_2                 = 0.0,
+            tilt_1              = 0.0, #part of the spin of the black hole
+            tilt_2              = 0.0,
+            phi_12              = 0.0,  #part of the spin of the black hole
+            phi_jl              = 0.0,
+            luminosity_distance = 5000.0, #2000
             theta_jn            = 1.5, #angle of angular momentum
             psi                 = 2.659,  #angle of polarization
             phase               = 1.2,
@@ -279,8 +283,9 @@ class GWScenario:
             suffix = chr(ord("A") + i)  
             for key, value in single.items():
                 joint[f"{key}_{suffix}"] = value
-
+                
         return joint
+    
     def _massesToChirpAndQ(self,m1, m2):
         # Ensure m1 >= m2 so that q = m2/m1 <= 1, as in bilby
         if m1 < m2:

@@ -5,21 +5,26 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import os
 from Pipeline import Pipeline_type
+from setUpLoggerScenario import setUpLoggerScenario
 
-def Main():
+def Main(useJoint = False):
     #build scenario
     ScenConfig     = ScenarioConfig()
-    scenario,logger,plot_dir,data_dir = utils.setUpLoggerScenario(ScenConfig)
-    data_dir = data_dir+"/results.hdf5"
+    scenario,logger,plot_dir,data_dir = setUpLoggerScenario(ScenConfig)
+    data_dir = data_dir/ "results_new.hdf5"
     results = utils.exctractResults(data_dir,logger)
     
     #modify the results
     #KL between joint posterior and others posterior.
-    for method in results.keys():
-        if method != 'joint_likl':
-            KL_res,KL_res_rev = utils.calculate_KL_between_joint(results,method,logger)
-            results[method]['diagnostics']['methodInfo']['KL_div_avg']     = KL_res
-            results[method]['diagnostics']['methodInfo']['KL_div_rev_avg'] = KL_res_rev
+    if useJoint:
+        for method in results.keys():
+            if method != 'joint_likl':
+                KL_res,KL_res_rev = utils.calculate_KL_between_joint(results,method,logger)
+                results[method]['diagnostics']['methodInfo']['KL_div_avg']     = KL_res
+                results[method]['diagnostics']['methodInfo']['KL_div_rev_avg'] = KL_res_rev
+    else:
+        #remove joint value
+        results.pop('joint_likl',None)
     
     # make corner plot of the posterior samples
     scenario.makePlots(["strain_time_domain_set_up","qtransform_set_up"],plot_dir)

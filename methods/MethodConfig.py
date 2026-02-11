@@ -21,7 +21,7 @@ def _default_npool() -> int:
 @dataclass(frozen=True)
 class MethodConfig:
     sampler:str           = "dynesty"
-    nlive: int            = 4000 #4000
+    nlive: int            = 2000 #4000
     dlogz: float          = 0.01 #0.1    #stopping criterion for the evidence
     sample: str           = "rslice" #rslice #unif', 'rwalk', 'slice', 'rslice', and 'auto' # performed until the autocorrelation length of the chain can be accurately determined.
     bound: str            = "multi"
