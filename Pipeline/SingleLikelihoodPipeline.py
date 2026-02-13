@@ -1,13 +1,13 @@
 from .Pipeline import Pipeline
 from .Pipeline_type import Pipeline_type
 from scenario import GWScenario
-from methods import DynestyConfig, SingleLikelihoodMethod, RunMode
+from methods import PymcNutsConfig,DynestyConfig, SingleLikelihoodMethod, RunMode
 
 class SingleLikelihoodPipeline(Pipeline):
     def __init__(self, logger, scenario:GWScenario):
         super().__init__(logger, scenario)
         self.pipeline_type = Pipeline_type.SINGLE
-        extraName          = "" #for logging purposes
+        extraName          = "_temp_NUTS" #for logging purposes
         self.singleLikl    = SingleLikelihoodMethod(scenario, logger, self.config,self.pipeline_type.code, extraName)
     
     def run(self,runMode:RunMode):
@@ -21,4 +21,4 @@ class SingleLikelihoodPipeline(Pipeline):
         self.singleLikl.log_diagnostic_tests(dataPipeline,ifos_override)
         
     def getConfig(self):
-        return DynestyConfig()
+        return PymcNutsConfig() #PymcNutsConfig()

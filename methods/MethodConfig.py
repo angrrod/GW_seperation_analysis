@@ -19,7 +19,16 @@ def _default_npool() -> int:
     return max(1, n)
 
 @dataclass(frozen=True)
-class DynestyConfig:
+class BaseSamplerConfig:
+    sampler: str
+    cores: int             = field(default_factory=_default_npool)
+    # sampler-agnostic behaviour controls
+    restrict_prior: bool   = True
+    restriction_str: float = 0.5
+    use_deltas: bool       = False
+    
+@dataclass(frozen=True)
+class DynestyConfig(BaseSamplerConfig):
     sampler:str           = "dynesty"
     nlive: int            = 2000 #4000
     dlogz: float          = 0.01 #0.1    #stopping criterion for the evidence
@@ -27,19 +36,14 @@ class DynestyConfig:
     bound: str            = "multi"
     walks: int            = None #50          #steps for MCMC sampeler to select new candidates     
     nact: int             = 300  #300      #amount of steps is tuned so autocorr is small enough, needed for determining the correct slicing behaviour
-    npool: int            = field(default_factory=_default_npool)   #18
     maxmcmc: int          = None #20000   #needed for MCMC sampeling, not needed for dynesty sampeling
-    restrict_prior: bool  = True  # restrict the priors to a small value
-    restriction_str:float = 0.1     #1  tunes the strenght of the restriction 
-    use_deltas:bool       = False
 
 @dataclass(frozen=True)
-class PymcNutsConfig:
-    sampler:str  = "numpyro"
-    sampler_name = "NUTS",
-    draws: int   = 10 #total steps = draws +tune
-    tune: int    = 2000
-    chains: int  = 4
-    cores: int   = 4
+class PymcNutsConfig(BaseSamplerConfig):
+    sampler:str          = "numpyro"
+    sampler_name         = "NUTS"
+    draws: int           = 10 #total steps = draws +tune
+    tune: int            = 2000
+    chains: int          = 1 #TODO:change
     target_accept: float = 0.8
-    max_treedepth: int = 10
+    max_treedepth: int   = 10

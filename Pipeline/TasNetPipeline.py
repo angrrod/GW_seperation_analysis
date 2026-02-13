@@ -17,7 +17,7 @@ from trainer.end_to_end_denoise_saparate_trainer import CombinedModel
 class TasNetPipeline(Pipeline):
     def __init__(self,logger,scenario:GWScenario):
         super().__init__(logger, scenario)
-        self.pipeline_type    = Pipeline_type.TASNET
+        self.pipeline_type  = Pipeline_type.TASNET
         self.singleSampler1 = SingleLikelihoodMethod(scenario, logger,self.config,self.pipeline_type.code,"_1")
         self.singleSampler2 = SingleLikelihoodMethod(scenario, logger,self.config,self.pipeline_type.code,"_2")
         self.splitter       = self.getTasNetSplitter() #can be used to analyze other splitters

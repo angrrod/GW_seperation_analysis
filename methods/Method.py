@@ -43,7 +43,16 @@ class Method(ABC):
         #     seed_frac=0.05,        # 10% of live points near injection
         #     rel_jitter=1e-3        # jitter scale relative to prior width
         # )
-        
+        if self.config.sampler == "dynesty":
+            sample = self._dynestySample(resume,clean,likelihood)
+        elif self.config.sampler == "numpyro":
+            sample = self._NUTSSample(resume,clean,likelihood)
+        else:
+            raise NotImplementedError("sampling method not implemented")
+        results = self.updateResults(sample,likelihood)
+        return results
+    
+    def _dynestySample(self,resume,clean,likelihood):
         sample = bilby.run_sampler(
             likelihood   = likelihood,
             priors       = self.prior,
@@ -60,12 +69,31 @@ class Method(ABC):
             # live_points= live_points, #TODO: DELETE
             outdir       = str(self.getSampleOutdir(self.nameExtra)),
             label        = self.pipeline_type_code,
-            npool        = self.config.npool,
-            queue_size   = self.config.npool,
+            npool        = self.config.cores,
+            queue_size   = self.config.cores,
             print_method = 'interval-60'
         )
-        results = self.updateResults(sample,likelihood)
-        return results
+        return sample
+    
+    def _NUTSSample(self,resume,clean,likelihood):
+        sample = bilby.run_sampler(
+            likelihood         = likelihood,
+            priors             = self.prior,
+            sampler            = self.config.sampler,
+            sampler_name       = self.config.sampler_name,
+            num_warmup         = self.config.tune,     
+            num_samples        = self.config.draws,   
+            outdir             = str(self.getSampleOutdir(self.nameExtra)),
+            label              = self.pipeline_type_code,
+            resume             = resume,
+            clean              = clean,
+            target_accept_prob = self.config.target_accept,
+            max_tree_depth     = self.config.max_treedepth,
+            npool              = self.config.cores,
+            queue_size         = self.config.cores,
+            print_method       = 'interval-60'
+        )
+        return sample
     
     def run(self,runMode:RunMode,ifos_override):
         #main entry point
@@ -153,6 +181,13 @@ class Method(ABC):
         if self.scenario.config.waveform_approximant == "IMRPhenomD":
             fixed_priors   = ["a_1","a_2","tilt_1","tilt_2","phi_12","phi_jl"]
             prior = self.fixPriors(prior,fixed_priors,waveformIdx,True)
+        
+        # numpyro does not support constraints on the prior
+        if self.config.sampler == "numpyro":
+            prior.pop("mass_1", None)
+            prior.pop("mass_2", None)
+            
+
         return prior
     
     ### WJ: 04/01/25 fix priors for debugging
@@ -189,13 +224,31 @@ class Method(ABC):
     # independent priors for both
     def getJointPriors(self):
         self.logger.info("$$$ getting joint priors")
-        base = self.GetSinglePrior()   # BBHPriorDict
-        priors = bilby.core.prior.PriorDict()
-
-        for key, prior in base.items():
-            priors[f"{key}_A"] = copy.deepcopy(prior)
-            priors[f"{key}_B"] = copy.deepcopy(prior)
+        #get waveforms with prior around actual values
+        priors   = bilby.core.prior.PriorDict()
+        for waveformidx in range(2):
+            for key, prior in self.GetSinglePrior(waveformidx).items():
+                if waveformidx==0:
+                    priors[f"{key}_A"] = copy.deepcopy(prior)
+                elif waveformidx == 1:
+                    priors[f"{key}_B"] = copy.deepcopy(prior)
             
+        
+        # break prior symmetry, ensure that one signal is later than the other
+        max_time_A = self.scenario.GetWaveFormParams()[0].get("geocent_time") #used in symmetry breaking
+        max_time_B = self.scenario.GetWaveFormParams()[1].get("geocent_time")
+        if max_time_A > max_time_B:
+            priors["geocent_time_B"] = bilby.core.prior.Uniform(
+                                        minimum=0,
+                                        maximum=max_time_A,  
+                                        name="geocent_time_B",
+                                    )
+        else: 
+            priors["geocent_time_A"] = bilby.core.prior.Uniform(
+                                        minimum=0,
+                                        maximum=max_time_B,  
+                                        name="geocent_time_A",
+                                    )
         return priors
     
     def _getRBWaveForm(self):
@@ -215,6 +268,11 @@ class Method(ABC):
     @abstractmethod
     def getPrior(self):
         pass
+
+
+
+
+
 
 
 ####################################
