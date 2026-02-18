@@ -11,6 +11,7 @@ class SingleLikelihoodMethod(Method):
 
         
     def getLikelihood_wrapped(self, ifos_override,newPriors:bool = False):
+        #ovrride for logging/testing/debug reasons
         #code used in residual calculations
         ifos = self.parseIfos_override(ifos_override)
         
@@ -53,17 +54,17 @@ class SingleLikelihoodMethod(Method):
     def getLikelihood(self,ifos_override,wrapped:bool = False,newPriors:bool = False):
         # wrapper object of the likelihood
         # build the real likelihood object from Method
-        # wrapped will always be false, it is old code that is used for logging
         like = self.getLikelihood_wrapped(ifos_override,newPriors)
-        if wrapped:
-            # attach diagnostic logging to this likelihood object
-            theta_inj = self.scenario.injct_params_waves[0].copy()
-            like = self.attach_logl_wrapper(
-                like,
-                theta_actual=theta_inj,
-                every=1000,          # choose cadence
-                label_actual="inj",
-            )
+        # WJ: 13/02/2026 wrapped will always be false, it is old code that is used for logging
+        # if wrapped:
+        #     # attach diagnostic logging to this likelihood object
+        #     theta_inj = self.scenario.injct_params_waves[0].copy()
+        #     like = self.attach_logl_wrapper(
+        #         like,
+        #         theta_actual=theta_inj,
+        #         every=1000,          # choose cadence
+        #         label_actual="inj",
+        #     )
         return like
 
     def updateResults(self,result,likelihood):

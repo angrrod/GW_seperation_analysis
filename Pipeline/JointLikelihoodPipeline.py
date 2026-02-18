@@ -20,3 +20,7 @@ class JointLikelihoodPipeline(Pipeline):
     
     def getConfig(self):
         return DynestyConfig()
+    
+    def log_diagnostic_tests(self,result,ifos_override = None):
+        # run diagnostic tests
+        self.jointLikl.log_diagnostic_tests(result,ifos_override)

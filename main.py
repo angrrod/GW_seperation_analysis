@@ -10,7 +10,7 @@ from setUpLoggerScenario import setUpLoggerScenario
 ####     Main Loop     ####
 ###########################
 
-def Main(mode: RunMode, pipeline_type,RunDiagnostics = False):
+def Main(mode: RunMode, pipeline_type,RunDiagnostics = True):
     #start_from_chekpt only used for continuing when crash,has happend
     """_summary_
     Args:
@@ -39,8 +39,10 @@ def Main(mode: RunMode, pipeline_type,RunDiagnostics = False):
         results[pipeline_type.code]['runTime'] = runTime
         method_meta                            = {"runTime" : runTime}
         
-        if pipeline_type == Pipeline_type.SINGLE and RunDiagnostics == True:
+        if (pipeline_type == Pipeline_type.SINGLE or pipeline_type == Pipeline_type.JOINT) and RunDiagnostics == True:
             dataPipeline.log_diagnostic_tests(simulation_results["waveFormA"],ifos_override = None)
+            if pipeline_type == Pipeline_type.JOINT:
+                dataPipeline.log_diagnostic_tests(simulation_results["waveFormB"],ifos_override = None)
         dataPipeline.writeMethodResult(data_dir,method_meta,simulation_results)
         
 def parse_args():

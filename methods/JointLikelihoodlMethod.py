@@ -66,14 +66,16 @@ class JointLikelihoodlMethod(Method):
     
     def log_diagnostic_tests(self,result,ifos_override):
         #tests for set-up function
-        likelihood  = self.getLikelihood(ifos_override)
-        inj = self.scenario.injct_params_waves[0].copy()
-        inj = {k: v for k, v in inj.items() if k in likelihood.priors}
+        theta_inj = self.scenario.injct_params_waves.copy()
+        # theta_ml  = self.getMaximumLikelihood(result)
+        ref_injection  = self.scenario.build_ref_injection(theta_inj.copy())
         
-        theta_inj = self.scenario.injct_params_waves[0].copy()
+        likelihood  = self.getLikelihood(ifos_override)
+        inj = {k: v for k, v in ref_injection.copy().items() if k in likelihood.priors}
+        
         # theta_ml  = self.getMaximumLikelihood(result)
         
         self._missing_dropped_keys_test(likelihood)
         self._bad_prior_support_test(likelihood,inj)
-        self._probe_local_logl_test(likelihood,theta_inj)
+        self._probe_local_logl_test(likelihood,ref_injection)
         # self._ML_inj_comparison_test(likelihood,inj,result)

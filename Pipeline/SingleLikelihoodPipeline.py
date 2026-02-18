@@ -16,9 +16,9 @@ class SingleLikelihoodPipeline(Pipeline):
         results = {"waveFormA" : result}
         return results
     
-    def log_diagnostic_tests(self,dataPipeline,ifos_override = None):
+    def log_diagnostic_tests(self,result,ifos_override = None):
         # run diagnostic tests
-        self.singleLikl.log_diagnostic_tests(dataPipeline,ifos_override)
+        self.singleLikl.log_diagnostic_tests(result,ifos_override)
         
     def getConfig(self):
-        return PymcNutsConfig() #PymcNutsConfig()
+        return DynestyConfig() #PymcNutsConfig() #DynestyConfig()

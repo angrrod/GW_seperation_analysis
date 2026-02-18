@@ -7,11 +7,11 @@ import os
 from Pipeline import Pipeline_type
 from setUpLoggerScenario import setUpLoggerScenario
 
-def Main(useJoint = False):
+def Main(useJoint = True):
     #build scenario
     ScenConfig     = ScenarioConfig()
     scenario,logger,plot_dir,data_dir = setUpLoggerScenario(ScenConfig)
-    data_dir = data_dir/ "results_new.hdf5"
+    data_dir = data_dir/ "results_newer.hdf5"
     results = utils.exctractResults(data_dir,logger)
     
     #modify the results
@@ -31,12 +31,12 @@ def Main(useJoint = False):
     params = [
         "chirp_mass",
         "mass_ratio", 
-        "psi",
-        "phase",
+        # "psi",
+        # "phase",
         "geocent_time",
-        "luminosity_distance",
-        "ra",
-        "dec"
+        "luminosity_distance"
+        # "ra",
+        # "dec"
         ] #,"mass_ratio","luminosity_distance"
     truths = scenario.GetWaveFormParams()
     truths = [[d[k] for k in params if k in d] for d in truths]  #get params to be plotted in corner plot

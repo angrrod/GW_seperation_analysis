@@ -142,6 +142,7 @@ class GWScenario:
         """
         # Use default scenario based ifo's
         if ifos is None:
+            self.logger.warning("$$$ using default ifos")
             ifos = self.ifos
             
         self.logger.info("$$$ getting time series objects")
@@ -155,73 +156,90 @@ class GWScenario:
         return ts, ts_noise
     
     ### plots ###
-    def _PlotTimeSignal(self,ts,timeCenter,ts_noise,fileName,outDir):
-        #plot time domain of signal
-        self.logger.info("$$$ making time domain plot")
-        white       = ts.whiten(4, 2).bandpass(40, 200)
-        white_noise = ts_noise.whiten(4, 2).bandpass(40, 200)
-        t_start     = timeCenter - 5.0
-        t_end       = timeCenter + 0.5
-
-        white_zoom       = white.crop(t_start, t_end)
-        white_noise_zoom = white_noise.crop(t_start, t_end)
         
-        #rescale
-        pure_signal = white_zoom.value - white_noise_zoom.value
-        white       = white_zoom.value
+    def _PlotTimeSignalTwoEvents(self, ts, tcs, ts_noise, fileName, outDir,
+                                pad_left=5.0, pad_right=0.5):
+        self.logger.info("$$$ making time domain plot (two events)")
 
-        raw_max   = np.max(np.abs(pure_signal))
-        white_max = np.max(np.abs(white))
+        t_min = min(tcs) - pad_left
+        t_max = max(tcs) + pad_right
 
-        scale      = white_max / raw_max        # bring raw up to whitened level
-        raw_scaled = pure_signal * scale
-        
-        # Plot manually using matplotlib (allows full control)
-        fig, ax = plt.subplots(figsize=(8, 4))
+        # Whiten + bandpass + crop (data)
+        white = ts.whiten(4, 2).bandpass(40, 200).crop(t_min, t_max)
 
-        # Whitened signal (red, more prominent)
-        ax.plot(white_zoom.times, white_zoom.value,
-                color="red", alpha=0.4, lw=1.2, label="full signal")
-        # Raw data (grey, semi-transparent)
-        ax.plot(white_zoom.times, raw_scaled,
-                color="black", alpha=1, lw=1, label="signal")
-        # Styling
-        ax.set_title("ET1 strain: time domain")
+        # Decide whether we can form a "signal-only" estimate
+        have_noise = (ts_noise is not None) and (len(ts_noise) == len(ts)) and (not np.all(ts_noise.value == 0))
+
+        pure_signal_plot = None
+        if have_noise:
+            # Important: apply the SAME processing AND the SAME crop
+            white_noise = ts_noise.whiten(4, 2).bandpass(40, 200).crop(t_min, t_max)
+
+            # Now shapes must match
+            if white_noise.value.shape != white.value.shape:
+                raise ValueError(f"shape mismatch after crop: white {white.value.shape}, white_noise {white_noise.value.shape}")
+
+            pure_signal = white.value - white_noise.value
+
+            # Rescale for visibility (optional)
+            raw_max   = np.max(np.abs(pure_signal))
+            white_max = np.max(np.abs(white.value))
+            if raw_max > 0:
+                pure_signal_plot = pure_signal * (white_max / raw_max)
+            else:
+                pure_signal_plot = pure_signal
+        else:
+            self.logger.info("$$$ ts_noise missing/zero/misaligned -> plotting whitened data only")
+
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(white.times, white.value, alpha=0.35, lw=1.2, label="whitened data (sig+noise)")
+
+        if pure_signal_plot is not None:
+            ax.plot(white.times, pure_signal_plot, alpha=1.0, lw=1.0, label="signal estimate (rescaled)")
+
+        for k, tc in enumerate(tcs):
+            ax.axvline(tc, linestyle="--", linewidth=1.0, label=f"tc inj{k}")
+
+        ax.set_title("ET1 strain: time domain (both injections)")
         ax.set_xlabel("Time [s]")
-        ax.set_ylabel("Strain")
+        ax.set_ylabel("Whitened strain")
         ax.legend(loc="upper right")
-        
+
         path = os.path.join(outDir, f"{fileName}.png")
         fig.savefig(path, dpi=300, bbox_inches="tight")
+
                 
-    def _PlotQtrans(self,timeCenter,ts,fileName,outDir):
+    def _PlotQtrans(self,ts,fileName,outDir):
         self.logger.info("$$$ making Qtransformed plot")
-        qspec = ts.q_transform(
+
+        t_start = float(ts.t0.value)
+        t_end   = float(ts.t0.value + ts.duration.value)
+
+        ts_zoom = ts.crop(t_start, t_end)
+
+        qspec = ts_zoom.q_transform(
             qrange=(8, 8),
             frange=(20, 512),
-            outseg=(0, self.config.duration), 
-            whiten=True,              
+            whiten=True,
         )
 
-        # Let GWpy handle the plotting
-        fig  = qspec.plot()
-        ax   = fig.gca()
+        fig = qspec.plot()
+        ax  = fig.gca()
         ax.set_yscale("log")
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("Frequency (Hz)")
-        ax.set_title("Q-transform of strain around first merger")
+        ax.set_title("Q-transform of strain (zoom)")
         path = os.path.join(outDir, f"{fileName}.png")
         fig.savefig(path, dpi=300, bbox_inches="tight")
         
     def makePlots(self,fileNames,outDir,ifos = None):
-        self.logger.info("$$$ making plots")
-        # data plots
-        # corner plot already done
-        ts, ts_noise = self._getDataTimeSeries(0,ifos)
-        tc           = self.injct_params_waves[0]['geocent_time']
-        
-        self._PlotTimeSignal(ts,tc,ts_noise,fileNames[0],outDir)
-        self._PlotQtrans(tc,ts,fileNames[1],outDir)
+        self.logger.info("$$$ making plots from ifo")
+        idx = 4
+        ts, ts_noise = self._getDataTimeSeries(idx, ifos)
+        tcs = [p["geocent_time"] for p in self.injct_params_waves[:2]]
+
+        self._PlotTimeSignalTwoEvents(ts, tcs, ts_noise, fileNames[0] + "_both", outDir)
+        self._PlotQtrans(ts, fileNames[1], outDir) 
     
     def GetWaveFormParams(self):
         self.logger.info("$$$ getting waveform parameters")
@@ -249,8 +267,8 @@ class GWScenario:
             psi                 = 2.659,  #angle of polarization
             phase               = 0.9,
             geocent_time        = self.config.duration*0.8,# 0.5,
-            ra                  = 1.375, #longituded
-            dec                 = -1.2108,  #lattiude
+            ra                  = 1.375, 
+            dec                 = -0.2108, 
         )
         injct_params_wave_2 = dict(
             chirp_mass          = chirp_2,
@@ -266,8 +284,8 @@ class GWScenario:
             psi                 = 2.659,  #angle of polarization
             phase               = 1.2,
             geocent_time        = self.config.duration*0.8 - self.config.time_delta,
-            ra                  = 1.75, #longituded
-            dec                 = -2.8,  #lattiude
+            ra                  = 1.2,
+            dec                 = -1.2, 
         )
         injct_params_waves = [injct_params_wave_1,injct_params_wave_2]
         return injct_params_waves

@@ -11,7 +11,7 @@ class Pipeline(ABC):
     def __init__(self,logger,scenario:GWScenario):
         self.logger        = logger
         self.scenario      = scenario
-        self.config        = self.getConfig()
+        self.config        = self.getConfig()  #decrepit code, remove it
         self.pipeline_type = None
         
     @abstractmethod

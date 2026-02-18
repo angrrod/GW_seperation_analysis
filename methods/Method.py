@@ -43,7 +43,7 @@ class Method(ABC):
         #     seed_frac=0.05,        # 10% of live points near injection
         #     rel_jitter=1e-3        # jitter scale relative to prior width
         # )
-        if self.config.sampler == "dynesty":
+        if self.config.sampler == "dynesty": #delete
             sample = self._dynestySample(resume,clean,likelihood)
         elif self.config.sampler == "numpyro":
             sample = self._NUTSSample(resume,clean,likelihood)
@@ -75,7 +75,7 @@ class Method(ABC):
         )
         return sample
     
-    def _NUTSSample(self,resume,clean,likelihood):
+    def _NUTSSample(self,resume,clean,likelihood): #delete
         sample = bilby.run_sampler(
             likelihood         = likelihood,
             priors             = self.prior,
@@ -87,11 +87,13 @@ class Method(ABC):
             label              = self.pipeline_type_code,
             resume             = resume,
             clean              = clean,
-            target_accept_prob = self.config.target_accept,
-            max_tree_depth     = self.config.max_treedepth,
+            # target_accept_prob = self.config.target_accept,
+            # max_tree_depth     = self.config.max_treedepth,
             npool              = self.config.cores,
-            queue_size         = self.config.cores,
-            print_method       = 'interval-60'
+            sampler_kwargs=dict(
+                target_acceptance = self.config.target_accept,
+                max_tree_depth    = self.config.max_treedepth,
+            ),
         )
         return sample
     
@@ -174,20 +176,13 @@ class Method(ABC):
             latex_label='$d_L$',
             unit='Mpc'
         )
-        fixed_priors   = ["chirp_mass","geocent_time"]
+        fixed_priors   = ["chirp_mass","geocent_time","mass_ratio","luminosity_distance"]
         prior = self.fixPriors(prior,fixed_priors,waveformIdx,self.config.use_deltas)
         
         #fix priors for waveform
         if self.scenario.config.waveform_approximant == "IMRPhenomD":
             fixed_priors   = ["a_1","a_2","tilt_1","tilt_2","phi_12","phi_jl"]
             prior = self.fixPriors(prior,fixed_priors,waveformIdx,True)
-        
-        # numpyro does not support constraints on the prior
-        if self.config.sampler == "numpyro":
-            prior.pop("mass_1", None)
-            prior.pop("mass_2", None)
-            
-
         return prior
     
     ### WJ: 04/01/25 fix priors for debugging
@@ -200,6 +195,8 @@ class Method(ABC):
                     self.logger.info(f"$$$ making prior delta {k}")
                     prior[k] = DeltaFunction(value, name=k)
                 else:
+                    if (value > prior[k].maximum) or (value < prior[k].minimum):
+                        raise ValueError(f'value: {value} not supported in prior [{prior[k].minimum},{prior[k].maximum}]')
                     upperDiff  = prior[k].maximum - value
                     lowerDiff  = value - prior[k].minimum
                     priorRange = (prior[k].maximum - prior[k].minimum)
@@ -393,7 +390,10 @@ class Method(ABC):
 
         def _maybe_loglr():
             fn = getattr(likelihood, "log_likelihood_ratio", None)
-            return float(fn()) if callable(fn) else None
+            if self.pipeline_type_code == "joint_likl":
+                return float(fn(parameters = None)) if callable(fn) else None
+            else:
+                return float(fn()) if callable(fn) else None
 
         logL0_noise = _maybe_noise_logl()
         logL0_lr = _maybe_loglr()

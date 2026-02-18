@@ -104,6 +104,8 @@ def _kl_divergence_kde(p_samples, q_samples,logger):
     logger.info("$$$ getting KL divergence between 2 posteriors using KDE")
     p_samples = p_samples.copy()
     q_samples = q_samples.copy()
+    p_samples = p_samples.loc[:, p_samples.nunique(dropna=False) > 1]
+    q_samples = q_samples.loc[:, q_samples.nunique(dropna=False) > 1]
     
     rel_cols  = p_samples.columns.intersection(q_samples.columns)
     q_samples = q_samples[rel_cols]
