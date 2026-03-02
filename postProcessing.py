@@ -11,7 +11,7 @@ def Main(useJoint = True):
     #build scenario
     ScenConfig     = ScenarioConfig()
     scenario,logger,plot_dir,data_dir = setUpLoggerScenario(ScenConfig)
-    data_dir = data_dir/ "results_newer.hdf5"
+    data_dir = data_dir/ "results.hdf5"
     results = utils.exctractResults(data_dir,logger)
     
     #modify the results

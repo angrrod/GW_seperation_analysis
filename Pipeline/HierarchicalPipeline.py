@@ -8,6 +8,7 @@ import numpy as np
 from utils import getMaximumLikelihood
 import os
 from utils import get_postprocessing_dir
+import pandas as pd
 class HierarchicalPipeline(Pipeline):
     def __init__(self,logger,scenario:GWScenario):
         super().__init__(logger, scenario)
@@ -18,8 +19,8 @@ class HierarchicalPipeline(Pipeline):
     def run(self,runMode:RunMode):
         self.logger.info("$$$ generate Samples for hyrarchical model")
         resultsSampleA        = self.singleSampler1.run(runMode,ifos_override = None)
-        MLPosteriorA          = getMaximumLikelihood(resultsSampleA)
-        
+        # MLPosteriorA          = getMaximumLikelihood(resultsSampleA)
+        MLPosteriorA                = pd.Series(self.scenario.GetWaveFormParams()[0])
         #TODO: remove
         # MLPosteriorA['luminosity_distance'] = 100
         # MLPosteriorA['geocent_time']        = 1
@@ -39,15 +40,23 @@ class HierarchicalPipeline(Pipeline):
             diff = np.linalg.norm(d1 - d2)
             n1   = np.linalg.norm(d1)
             n2   = np.linalg.norm(d2)
-
+            
             self.logger.info(f"$$$ ||d1||, {n1}, ||d2||, {n2}, ||d1-d2||, {diff}, rel, {diff / (n1 + 1e-300)}")
             self.logger.info(f"$$$ max|d1|, {np.max(np.abs(d1))}, max|d2|, {np.max(np.abs(d2))}, max|diff|, {np.max(np.abs(d1-d2))}")
             
+            td_res = residualIfos[i].strain_data.time_domain_strain
+            td_org = self.scenario.ifos[i].strain_data.time_domain_strain
+
+            self.logger.info(f"[{i}] TD shapes: res={td_res.shape}, org={td_org.shape}")
+            self.logger.info(f"[{i}] ||td_res - td_org|| = {np.linalg.norm(td_res - td_org):.6e}")
+            self.logger.info(f"[{i}] max|td_res-td_org| = {np.max(np.abs(td_res - td_org)):.6e}")
+            
+
         #test residual ifo
         plot_dir = os.path.join(get_postprocessing_dir(), "Plots")
         self.scenario.makePlots(["strain_time_domain_set_up_hyrarchical","qtransform_set_up_hyrarchical"],plot_dir,ifos = residualIfos)
         
-        resultsSampleB        = self.singleSampler2.run(runMode,ifos_override = residualIfos) #if we marginalize, the resampeling of the general posterior has been done via generateSamples() in the super class. 
+        resultsSampleB = self.singleSampler2.run(runMode,ifos_override = residualIfos) #if we marginalize, the resampeling of the general posterior has been done via generateSamples() in the super class. 
         results = {
             "waveFormA" : resultsSampleA,
             "waveFormB" : resultsSampleB
@@ -69,7 +78,7 @@ class HierarchicalPipeline(Pipeline):
             new_ifos.append(new_ifo)
         return InterferometerList(new_ifos)
     
-    def clone_ifo_with_new_fd_strain(self, ifo, new_fd):
+    def clone_ifo_with_new_fd_strain(self, ifo, new_fd, new_td):
         """
         Diagnostic: return an IFO that is identical to `ifo` in every way,
         except that its frequency_domain_strain is replaced by `new_fd`.
@@ -84,11 +93,19 @@ class HierarchicalPipeline(Pipeline):
             )
             
         new_ifo = copy.deepcopy(ifo)
-        new_ifo.set_strain_data_from_frequency_domain_strain(
-            frequency_domain_strain = np.array(new_fd, copy=True),
-            sampling_frequency      = ifo.strain_data.sampling_frequency,
-            duration                = ifo.strain_data.duration,
-            start_time              = ifo.strain_data.start_time,
+        
+        fs = ifo.strain_data.sampling_frequency
+        dur = ifo.strain_data.duration
+        start = ifo.strain_data.start_time
+        
+        res_fd = np.array(new_fd, copy=True)
+        res_td = np.array(new_td, copy=True)
+        
+        new_ifo.strain_data.set_from_time_domain_strain(
+            time_domain_strain=res_td, sampling_frequency=fs, duration=dur, start_time=start
+        )
+        new_ifo.strain_data.set_from_frequency_domain_strain(
+            frequency_domain_strain=res_fd, sampling_frequency=fs, duration=dur, start_time=start
         )
         return new_ifo
         

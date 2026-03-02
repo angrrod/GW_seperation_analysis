@@ -194,7 +194,7 @@ class Method(ABC):
                 if useDeltaFunction:
                     self.logger.info(f"$$$ making prior delta {k}")
                     prior[k] = DeltaFunction(value, name=k)
-                else:
+                elif self.config.restrict_prior:
                     if (value > prior[k].maximum) or (value < prior[k].minimum):
                         raise ValueError(f'value: {value} not supported in prior [{prior[k].minimum},{prior[k].maximum}]')
                     upperDiff  = prior[k].maximum - value
@@ -224,25 +224,25 @@ class Method(ABC):
         #get waveforms with prior around actual values
         priors   = bilby.core.prior.PriorDict()
         for waveformidx in range(2):
-            for key, prior in self.GetSinglePrior(waveformidx).items():
-                if waveformidx==0:
-                    priors[f"{key}_A"] = copy.deepcopy(prior)
+            prior = self.GetSinglePrior(waveformidx)
+            for key, prior in prior.items():
+                if waveformidx==0: #44-57 for time
+                    priors[f"{key}_A"] = copy.deepcopy(prior) 
                 elif waveformidx == 1:
                     priors[f"{key}_B"] = copy.deepcopy(prior)
-            
         
         # break prior symmetry, ensure that one signal is later than the other
         max_time_A = self.scenario.GetWaveFormParams()[0].get("geocent_time") #used in symmetry breaking
         max_time_B = self.scenario.GetWaveFormParams()[1].get("geocent_time")
         if max_time_A > max_time_B:
             priors["geocent_time_B"] = bilby.core.prior.Uniform(
-                                        minimum=0,
+                                        minimum=40,
                                         maximum=max_time_A,  
                                         name="geocent_time_B",
                                     )
         else: 
             priors["geocent_time_A"] = bilby.core.prior.Uniform(
-                                        minimum=0,
+                                        minimum=40,
                                         maximum=max_time_B,  
                                         name="geocent_time_A",
                                     )

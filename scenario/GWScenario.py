@@ -236,6 +236,16 @@ class GWScenario:
         self.logger.info("$$$ making plots from ifo")
         idx = 4
         ts, ts_noise = self._getDataTimeSeries(idx, ifos)
+        
+        diff = ts.value - ts_noise.value
+        self.logger.info(f"||ts||      = {np.linalg.norm(ts.value):.3e}")
+        self.logger.info(f"||ts_noise||= {np.linalg.norm(ts_noise.value):.3e}")
+        self.logger.info(f"||diff||    = {np.linalg.norm(diff):.3e}")
+
+        self.logger.info(f"std(ts)      = {np.std(ts.value):.3e}")
+        self.logger.info(f"std(ts_noise)= {np.std(ts_noise.value):.3e}")
+        self.logger.info(f"std(diff)    = {np.std(diff):.3e}")
+        
         tcs = [p["geocent_time"] for p in self.injct_params_waves[:2]]
 
         self._PlotTimeSignalTwoEvents(ts, tcs, ts_noise, fileNames[0] + "_both", outDir)
@@ -262,7 +272,7 @@ class GWScenario:
             tilt_2              = 0.0,
             phi_12              = 0.0,  #part of the spin of the black hole
             phi_jl              = 0.0,
-            luminosity_distance = 3000.0, #2000
+            luminosity_distance = 7000.0, #2000
             theta_jn            = 0.2, #angle of angular momentum
             psi                 = 2.659,  #angle of polarization
             phase               = 0.9,
@@ -279,7 +289,7 @@ class GWScenario:
             tilt_2              = 0.0,
             phi_12              = 0.0,  #part of the spin of the black hole
             phi_jl              = 0.0,
-            luminosity_distance = 5000.0, #2000
+            luminosity_distance = 6000.0, #2000
             theta_jn            = 1.5, #angle of angular momentum
             psi                 = 2.659,  #angle of polarization
             phase               = 1.2,
