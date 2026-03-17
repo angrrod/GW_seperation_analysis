@@ -6,6 +6,7 @@ from matplotlib.lines import Line2D
 import os
 from Pipeline import Pipeline_type
 from setUpLoggerScenario import setUpLoggerScenario
+import pandas as pd
 
 def Main(useJoint = True):
     #build scenario
@@ -13,7 +14,8 @@ def Main(useJoint = True):
     scenario,logger,plot_dir,data_dir = setUpLoggerScenario(ScenConfig)
     data_dir = data_dir/ "results.hdf5"
     results = utils.exctractResults(data_dir,logger)
-    
+    # t1 = results['joint_likl']['posteriors']['waveFormA']['chirp_mass']
+    # t2 = results['joint_likl']['posteriors']['waveFormA']['geocent_time']
     #modify the results
     #KL between joint posterior and others posterior.
     if useJoint:

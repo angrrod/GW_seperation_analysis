@@ -176,7 +176,7 @@ class Method(ABC):
             latex_label='$d_L$',
             unit='Mpc'
         )
-        fixed_priors   = ["chirp_mass","geocent_time","mass_ratio","luminosity_distance"]
+        fixed_priors   = ["geocent_time"]# "chirp_mass", ,"mass_ratio","luminosity_distance"
         prior = self.fixPriors(prior,fixed_priors,waveformIdx,self.config.use_deltas)
         
         #fix priors for waveform
