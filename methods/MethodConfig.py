@@ -23,14 +23,14 @@ class BaseSamplerConfig:
     sampler: str
     cores: int             = field(default_factory=_default_npool)
     # sampler-agnostic behaviour controls
-    restrict_prior: bool   = True  #should be kept at false, doesn't work with TasNet/hierarchical pipeline as they need te have a different prior to allow for a support there
+    restrict_prior: bool   = False  #should be kept at False, doesn't work with TasNet/hierarchical pipeline as they need te have a different prior to allow for a support there
     restriction_str: float = 0.5
     use_deltas: bool       = False
     
 @dataclass(frozen=True)
 class DynestyConfig(BaseSamplerConfig):
     sampler:str           = "dynesty"
-    nlive: int            = 4000 #1000
+    nlive: int            = 2000 #1000
     dlogz: float          = 0.01 #0.1    #stopping criterion for the evidence
     sample: str           = "rslice" #rslice #unif', 'rwalk', 'slice', 'rslice', and 'auto' # performed until the autocorrelation length of the chain can be accurately determined.
     bound: str            = "multi"

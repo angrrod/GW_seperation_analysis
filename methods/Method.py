@@ -170,7 +170,7 @@ class Method(ABC):
         )
         prior["luminosity_distance"] = bilby.gw.prior.UniformSourceFrame(
             minimum=1e3,      
-            maximum=1e5, #1e5      
+            maximum=1.5e5, #1e5      
             cosmology='Planck15',
             name='luminosity_distance',
             latex_label='$d_L$',
