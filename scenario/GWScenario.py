@@ -272,7 +272,7 @@ class GWScenario:
             tilt_2              = 0.0,
             phi_12              = 0.0,  #part of the spin of the black hole
             phi_jl              = 0.0,
-            luminosity_distance = 9500.0, #2000
+            luminosity_distance = 9000.0, #2000
             theta_jn            = 0.2, #angle of angular momentum
             psi                 = 2.659,  #angle of polarization
             phase               = 0.9,
@@ -289,7 +289,7 @@ class GWScenario:
             tilt_2              = 0.0,
             phi_12              = 0.0,  #part of the spin of the black hole
             phi_jl              = 0.0,
-            luminosity_distance = 9000.0, #2000
+            luminosity_distance = 8000.0, #2000
             theta_jn            = 1.5, #angle of angular momentum
             psi                 = 2.659,  #angle of polarization
             phase               = 1.2,
