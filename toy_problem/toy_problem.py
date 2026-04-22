@@ -76,21 +76,7 @@ class FullAffineTransform(Transform):
         diag = torch.diagonal(self.scale_tril, dim1=-2, dim2=-1)
         ladj = torch.sum(torch.log(diag))
         return ladj.expand(z.shape[:-1])
-    def _inverse(self, z: torch.Tensor) -> torch.Tensor:
-        """
-        Base -> data:
-            x = loc + L z
-        """
-        return z @ self.scale_tril.mT + self.loc
 
-    def log_abs_det_jacobian(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        """
-        y = _call(x) = L^{-1}(x-loc), so
-        log|det dy/dx| = -log|det L|
-        """
-        diag = torch.diagonal(self.scale_tril, dim1=-2, dim2=-1)
-        ladj = -torch.sum(torch.log(diag))
-        return ladj.expand(x.shape[:-1])
 class LazyFullAffineTransform(LazyTransform):
     """
     A true Zuko lazy transform:
@@ -525,7 +511,7 @@ class VectorCopulaFlowQ(TorchDistribution):
         if not torch.isfinite(Bd).all():
             raise RuntimeError("Blockdiag(OmegaBar) contains NaN/Inf")
 
-        Bd = Bd + 1e-4 * eye
+        # Bd = Bd + 1e-4 * eye
         L = torch.linalg.cholesky(Bd)
 
         A = torch.linalg.solve_triangular(L, eye, upper=False)
@@ -550,10 +536,16 @@ class VectorCopulaFlowQ(TorchDistribution):
         #     torch.tensor(1.),
         # )
         
+        if theta.ndim == 2:
+            # batched
+            zeros = theta.new_zeros(theta.shape[0])
+        else:
+            # single event
+            zeros = theta.new_tensor(0.0)
         #get log prob of the marginal flows using made products
         if self.useIdentityTransform:
-            logp_marg_1 = torch.tensor(0.0)
-            logp_marg_2 = torch.tensor(0.0)
+            logp_marg_1 = zeros
+            logp_marg_2 = zeros
             #generate input for log prob copula
             Q_1 = theta02
             Q_2 = theta24
@@ -626,8 +618,15 @@ class VectorCopulaFlowQ(TorchDistribution):
         return torch.cat([sample_1,sample_2], dim=1)
 
     def _logProbCopula(self,Q,d = 4):
+        if Q.ndim == 2:
+            # batched
+            zeros = Q.new_zeros(Q.shape[0])
+        else:
+            # single event
+            zeros = Q.new_tensor(0.0)
+        
         if self.isIndependentCopula:
-            return torch.tensor(0.0),torch.tensor(0.0),torch.tensor(0.0)
+            return zeros,zeros,zeros
         Omega           = self._buildOmega()
         I               = torch.eye(4)
         _, logabsdet    = torch.linalg.slogdet(Omega)
@@ -1104,11 +1103,59 @@ def plot_two_marginals(
     plt.tight_layout()
     plt.savefig(filename, dpi=300, bbox_inches="tight")
     plt.close(fig)
-# perform SVI optimization
 
+# perform SVI optimization
+def plot_all_2d_pairs_fixed(
+    samples: torch.Tensor,
+    filename: str,
+    titles: list[str] | None = None,
+    s: float = 5,
+    alpha: float = 0.5,
+    xlim: tuple[float, float] = (-5, 5),
+    ylim: tuple[float, float] = (-5, 5),
+    figsize: tuple[float, float] = (15, 10),
+):
+    """
+    Plot all 6 pairwise 2D marginals of a 4D sample in a fixed 2x3 layout.
+    """
+    if samples.ndim != 2 or samples.shape[1] != 4:
+        raise ValueError(f"Expected samples of shape (N, 4), got {tuple(samples.shape)}")
+
+    pairs = [
+        (0, 1),
+        (0, 2),
+        (0, 3),
+        (1, 2),
+        (1, 3),
+        (2, 3),
+    ]
+
+    if titles is None:
+        titles = [f"Marginal [{i},{j}]" for i, j in pairs]
+
+    if len(titles) != 6:
+        raise ValueError(f"Expected exactly 6 titles, got {len(titles)}")
+
+    samples_np = samples.detach().cpu().numpy()
+
+    fig, axes = plt.subplots(2, 3, figsize=figsize)
+    axes = axes.ravel()
+
+    for ax, (i, j), title in zip(axes, pairs, titles):
+        ax.scatter(samples_np[:, i], samples_np[:, j], s=s, alpha=alpha)
+        ax.set_xlabel(f"theta[{i}]")
+        ax.set_ylabel(f"theta[{j}]")
+        ax.set_title(title)
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
+
+    plt.tight_layout()
+    plt.savefig(filename, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    
 class pyroPipe(ABC):
     def __init__(self,X,num_particles,batch_size,config = NF_type.NSF,isIndependentCopula:bool = False):
-        self.ModelParams          = getModelParams()
+        self.ModelParams          = getModelParams(isIndependentCopula)
         self.batch_size           = batch_size
         self.optimizer            = pyro.optim.ClippedAdam(self._per_param_optim_args) 
         self.loss                 = Trace_ELBO(num_particles=num_particles) #pyro machinery
@@ -1261,28 +1308,28 @@ class pyroCopulaSVIPipeline(pyroPipe):
             if config == NF_type.MAF:
                 self.flow_1 = zuko.flows.MAF(
                     features        = 2,
-                    transforms      = 4,
-                    hidden_features = (16,),
+                    transforms      = 2,
+                    hidden_features = (8,),
                 )
                 self.flow_2 = zuko.flows.MAF(
                     features        = 2,
-                    transforms      = 4,
-                    hidden_features = (16,),
+                    transforms      = 2,
+                    hidden_features = (8,),
                 ) 
             elif config == NF_type.NSF:
                 self.flow_1 = zuko.flows.NSF(
                     features        = 2,
-                    transforms      = 4,
+                    transforms      = 2,
                     context         = 0,
-                    hidden_features = (16,),
+                    hidden_features = (10,),
                     bins            = 8,
                     randperm        = False,
                 )
                 self.flow_2 = zuko.flows.NSF(
                     features        = 2,
-                    transforms      = 4,
+                    transforms      = 2,
                     context         = 0,
-                    hidden_features = (16,),
+                    hidden_features = (10,),
                     bins            = 8,
                     randperm        = False,
                 )
@@ -1381,23 +1428,26 @@ class pyroCopulaSVIPipeline(pyroPipe):
 
     def plot_training_state(self, step: int, n_samples: int = 5000):
         with torch.no_grad():
-            d1 = self.flow_1()
-            d2 = self.flow_2()
-            samples_1 = d1.sample((n_samples,))
-            samples_2 = d2.sample((n_samples,))
+            q = self.make_q()
+            samples = q.sample((n_samples,))   # (n_samples, 4)
 
-        filename = os.path.join(self.plot_dir, f"joint_marginals_step_{step:06d}.png")
-        plot_two_marginals(
-            samples_1=samples_1,
-            samples_2=samples_2,
+        filename = os.path.join(self.plot_dir, f"joint_pairs_step_{step:06d}.png")
+
+        plot_all_2d_pairs_fixed(
+            samples=samples,
             filename=filename,
-            titles=(
-                f"Flow 1 marginal at step {step}",
-                f"Flow 2 marginal at step {step}",
-            ),
-            xlabels=("theta[0]", "theta[2]"),
-            ylabels=("theta[1]", "theta[3]"),
-        )
+            titles=[
+                f"[0,1] step {step}",
+                f"[0,2] step {step}",
+                f"[0,3] step {step}",
+                f"[1,2] step {step}",
+                f"[1,3] step {step}",
+                f"[2,3] step {step}",
+            ],
+            xlim=(-5, 5),
+            ylim=(-5, 5),
+            figsize=(15, 10),
+        )        
 
 class pyroMarginalSVIPipeline(pyroPipe): 
     def __init__(self,X,num_particles,indices,batch_size = 512,marginal_dim = 2,plot_dir = "toy_problem",config = NF_type.NSF,isIndependentCopula = False):
@@ -1408,15 +1458,15 @@ class pyroMarginalSVIPipeline(pyroPipe):
         if config == NF_type.MAF:
             self.flow = zuko.flows.MAF(
                 features        = 2,
-                transforms      = 4,
-                hidden_features = (16,),
+                transforms      = 2,
+                hidden_features = (8,),
             )
         elif config == NF_type.NSF:
             self.flow = zuko.flows.NSF(
                     features        = 2,
-                    transforms      = 4,
+                    transforms      = 2,
                     context         = 0,
-                    hidden_features = (16,),
+                    hidden_features = (10,),
                     bins            = 8,
                     randperm        = False,
             )
@@ -1658,9 +1708,9 @@ def scenario(config:NF_type, suffix = "_NSF_INDEP",isIndependentCopula:bool = Fa
     N             = 256
     known_cov     = getModelParams(isIndependentCopula)['cov']
     X             = sample_true_data(N, getTrueParams(),known_cov)
-    # mu         = X.mean(0)
-    # std        = X.std(0)
-    # X          = (X - mu) / std
+    mu         = X.mean(0)
+    std        = X.std(0)
+    X          = (X - mu) / std
     
     #config
     batch_size    = 64 #512 2048 128
@@ -1677,7 +1727,7 @@ def scenario(config:NF_type, suffix = "_NSF_INDEP",isIndependentCopula:bool = Fa
         config              = config,
         isIndependentCopula = isIndependentCopula
         )
-    loss_list_1,_,flow_1_chkpt = pipe_init_1.trainModel(500,10)
+    loss_list_1,_,flow_1_chkpt = pipe_init_1.trainModel(1000,10)
     plotLoss("svi_loss_diagnostic_init_1.png",loss_list_1)
     pipe_init_1.plot_samples(10000,"toy_problem/MarginalSample_1.png")
     
@@ -1692,7 +1742,7 @@ def scenario(config:NF_type, suffix = "_NSF_INDEP",isIndependentCopula:bool = Fa
         config              = config,
         isIndependentCopula = isIndependentCopula
         )
-    loss_list_2,_,flow_2_chkpt = pipe_init_2.trainModel(500,10)
+    loss_list_2,_,flow_2_chkpt = pipe_init_2.trainModel(1000,10)
     plotLoss("svi_loss_diagnostic_init_2.png",loss_list_2)
     pipe_init_2.plot_samples(10000,"toy_problem/MarginalSample_2.png")
     
@@ -1730,7 +1780,7 @@ def scenario(config:NF_type, suffix = "_NSF_INDEP",isIndependentCopula:bool = Fa
     plot_posterior_marginals(pipe,X)  
     
     #--- main part of the model of the model ---
-    loss_list,diagnostics,_ = pipe.trainModel(2000,10)
+    loss_list,diagnostics,_ = pipe.trainModel(5000,10)
     
     postProcessTest(loss_list,diagnostics,pipe,X)
     
