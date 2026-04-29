@@ -1,11 +1,10 @@
 from abc import ABC, abstractmethod
 from scenario import GWScenario
-from methods import DynestyConfig,PymcNutsConfig,RunMode
+from methods import RunMode
 from pathlib import Path
 import json
 from .Pipeline_type import Pipeline_type
 import pandas as pd
-
 
 class Pipeline(ABC):
     def __init__(self,logger,scenario:GWScenario):

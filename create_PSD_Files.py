@@ -1,6 +1,6 @@
 # this short script builds the PSD for both the ET from the ET_D PSD and the cosmic_explorer_strain PSD.
 import numpy as np
-from scenario import ScenarioConfig
+from config import ScenarioConfig
 
 def Main():
     def _createPSDFile(ASD_file_name):

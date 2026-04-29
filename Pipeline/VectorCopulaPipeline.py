@@ -3,7 +3,7 @@ from .Pipeline_type import Pipeline_type
 from scenario import GWScenario
 from .TasNetPipeline import TasNetPipeline
 from .Pipeline import Pipeline
-from methods import DynestyConfig
+from config import DynestyConfig
 
 class VectorCopulaPipeline(Pipeline):
     def __init__(self,logger,scenario:GWScenario):

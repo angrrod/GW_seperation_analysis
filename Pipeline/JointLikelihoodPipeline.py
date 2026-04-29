@@ -1,8 +1,8 @@
 from .Pipeline import Pipeline
 from .Pipeline_type import Pipeline_type
 from scenario import GWScenario
-from methods import DynestyConfig, RunMode, JointLikelihoodlMethod
-
+from methods import RunMode, JointLikelihoodlMethod
+from config import DynestyConfig
 class JointLikelihoodPipeline(Pipeline):
     def __init__(self, logger, scenario:GWScenario):
         super().__init__(logger, scenario)

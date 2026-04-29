@@ -1,7 +1,7 @@
 import torch
 import pyro
 from abc import ABC,abstractmethod
-from NFs import NF_type, FullAffineTransform,LazyFullAffineTransform
+from NFs import NF_type,LazyFullAffineTransform
 from pyro.infer import SVI, Trace_ELBO
 from datetime import datetime
 import os
@@ -15,7 +15,7 @@ from torch.distributions import constraints
 import matplotlib.pyplot as plt
 from pyro.contrib.zuko import ZukoToPyro
 from setUp import getModelParams
-
+from pyro.infer.autoguide import AutoMultivariateNormal
 
 def plot_all_2d_pairs_fixed(
     samples: torch.Tensor,
@@ -149,10 +149,10 @@ class pyroPipe(ABC):
         raise NotImplementedError
     
     @abstractmethod
-    def plot_training_state(self, step: int, n_samples: int = 5000):
+    def plot_training_state(self, step: int, run:int, n_samples: int = 5000):
         raise NotImplementedError
     
-    def trainModel(self,nSteps,printEvery):
+    def trainModel(self,nSteps,printEvery,run):
         step        = 0
         prev_loss   = 0
         diff        = 0
@@ -219,7 +219,7 @@ class pyroPipe(ABC):
                     q = self.make_q()
                     samples = q.sample((5000,))   # (5000, 4)
                 if self.plot_during_training:
-                    self.plot_training_state(step=step, n_samples=5000)
+                    self.plot_training_state(step=step,run = run, n_samples=5000)
                 
             prev_loss = loss
             step +=1
@@ -239,15 +239,16 @@ class pyroPipe(ABC):
         # elif "flow_1" in param_name or "flow_2" in param_name:
         #     return {"lr": 2e-4, "clip_norm": 5.0}
         # else:
-        return {"lr": 1e-3, "clip_norm": 10.0}
+        return {"lr": 5e-4, "clip_norm": 10.0}
     
-    def plot_training_state(self, step: int, n_samples: int = 5000):
+    def plot_training_state(self, step: int, run:int, n_samples: int = 5000):
         self.flow.eval()
         with torch.no_grad():
-            q = self.flow()
+            q       = self.flow()
             samples = q.sample((n_samples,))
-
-        filename = os.path.join(self.plot_dir, f"marginal_step_{step:06d}.png")
+        dirpath     = os.path.join(self.plot_dir,f"run_{run}")
+        os.makedirs(dirpath, exist_ok=True)
+        filename    = os.path.join(dirpath, f"marginal_step_{step:06d}_{run}.png")
 
         plot_2d_samples(
             samples=samples,
@@ -265,8 +266,9 @@ class pyroCopulaSVIPipeline(pyroPipe):
         self.useIdentityTransform = False #Marginal flows used is the special identity transform
         
         self.FreezeWeights = FreezeWeights
-        self.has_q         = True
+        self.has_q         = True # TODO: fix
         self.plot_dir      = plot_dir
+        self.auto_guide    = AutoMultivariateNormal(self.model)
         os.makedirs(plot_dir, exist_ok=True)
 
         if self.useIdentityTransform:
@@ -312,8 +314,9 @@ class pyroCopulaSVIPipeline(pyroPipe):
             [0.0, 0.5, 0.5]
         ])
         self.zeta_init = torch.tensor(1.0)
-        self.flow_1.load_state_dict(flow_1_chkpt)
-        self.flow_2.load_state_dict(flow_2_chkpt)
+        if (flow_1_chkpt is not None) and (flow_2_chkpt is not None):
+            self.flow_1.load_state_dict(flow_1_chkpt)
+            self.flow_2.load_state_dict(flow_2_chkpt)
     
     def model(self,data):
         ### this defines your unnormalized posterior
@@ -340,6 +343,9 @@ class pyroCopulaSVIPipeline(pyroPipe):
         # pyro.module("flow", self.flow)
         q = self.make_q() #ZukoToPyro(self.flow())          # instantiate lazy flow -> actual distribution
         pyro.sample("theta", q)
+    
+    def _guide(self, data):
+        return self.auto_guide(data)
         
     def make_q(self):
         #freeze? -> remove both lines from paramstore
@@ -393,12 +399,16 @@ class pyroCopulaSVIPipeline(pyroPipe):
     def getOptimalState(self):
         return None
 
-    def plot_training_state(self, step: int, n_samples: int = 5000):
+    def plot_training_state(self, step: int, run:int, n_samples: int = 5000):
         with torch.no_grad():
-            q = self.make_q()
+            if self.has_q:
+                q   = self.make_q()
+            else:
+                q   = self.auto_guide.get_posterior()
             samples = q.sample((n_samples,))   # (n_samples, 4)
-
-        filename = os.path.join(self.plot_dir, f"joint_pairs_step_{step:06d}.png")
+        dirpath     = os.path.join(self.plot_dir,f"run_{run}")
+        os.makedirs(dirpath, exist_ok=True)
+        filename    = os.path.join(dirpath, f"joint_pairs_step_{step:06d}_{run}.png")
 
         plot_all_2d_pairs_fixed(
             samples=samples,

@@ -1,7 +1,7 @@
 import time
 from collections import defaultdict
 from methods import RunMode
-from scenario import ScenarioConfig
+from config import ScenarioConfig
 import argparse
 from Pipeline import Pipeline_type
 import os

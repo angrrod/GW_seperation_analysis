@@ -1,8 +1,8 @@
 from .Pipeline import Pipeline
 from .Pipeline_type import Pipeline_type
 from scenario import GWScenario
-from methods import PymcNutsConfig,SingleLikelihoodMethod, RunMode
-
+from methods import SingleLikelihoodMethod, RunMode
+from config import PymcNutsConfig
 class MetroWithinGibbsPipeline(Pipeline):
     #TODO: implement cosine, sine and geomcentric distance priors
     #      make sure arguents in single likelihood are passed correctly

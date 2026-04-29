@@ -1,11 +1,11 @@
 from .Pipeline import Pipeline
 from .Pipeline_type import Pipeline_type
-from methods import SingleLikelihoodMethod,DynestyConfig,RunMode
+from methods import SingleLikelihoodMethod,RunMode
+from config import DynestyConfig
 from scenario import GWScenario
 from bilby.gw.detector import InterferometerList
 import copy
 import numpy as np
-from utils import getMaximumLikelihood
 import os
 from utils import get_postprocessing_dir
 import pandas as pd

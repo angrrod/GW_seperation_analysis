@@ -1,6 +1,6 @@
 ### this script is made so it analyses the results obtained from the main GW sampeling step ###
 import utils
-from scenario import ScenarioConfig
+from config import ScenarioConfig
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import os

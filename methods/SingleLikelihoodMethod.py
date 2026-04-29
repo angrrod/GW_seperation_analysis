@@ -2,13 +2,13 @@ import bilby
 from .Method import Method
 from scenario import GWScenario
 from bilby.gw.conversion import generate_posterior_samples_from_marginalized_likelihood
-
+from prior import prior
+from config import ScenarioConfig
 class SingleLikelihoodMethod(Method):
     def __init__(self, scenario:GWScenario,logger,config,pipeline_type_code:str,nameExtra:str):
         super().__init__(scenario, logger, config, pipeline_type_code)
         self.nameExtra        = nameExtra #needed for getting the correct logging directories
         self._logl_diag_state = {"did_header": set()} # for logging purposes
-
         
     def getLikelihood_wrapped(self, ifos_override,newPriors:bool = False):
         #ovrride for logging/testing/debug reasons
@@ -81,7 +81,7 @@ class SingleLikelihoodMethod(Method):
     
     def getPrior(self):
         self.logger.info("$$$ getting the prior")
-        return self.GetSinglePrior() 
+        return self.priorConstructor.GetSinglePrior() 
     
     def log_diagnostic_tests(self,result,ifos_override):
         #tests for set-up function

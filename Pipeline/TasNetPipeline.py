@@ -1,4 +1,4 @@
-from methods import DynestyConfig, SingleLikelihoodMethod, RunMode
+from methods import SingleLikelihoodMethod, RunMode
 from .Pipeline_type import Pipeline_type
 from scenario import GWScenario
 import copy
@@ -8,6 +8,8 @@ import torch
 from .Pipeline import Pipeline
 from bilby.gw.utils import noise_weighted_inner_product
 from utils import get_base_log_dir,get_base_work_dir
+
+from config import DynestyConfig
 
 from config.option import parse
 import trainer.denoise_pytorch_trainer

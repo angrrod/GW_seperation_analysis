@@ -1,7 +1,8 @@
 from .Pipeline import Pipeline
 from .Pipeline_type import Pipeline_type
 from scenario import GWScenario
-from methods import PymcNutsConfig,DynestyConfig, SingleLikelihoodMethod, RunMode
+from methods import SingleLikelihoodMethod, RunMode
+from config import DynestyConfig,PymcNutsConfig
 
 class SingleLikelihoodPipeline(Pipeline):
     def __init__(self, logger, scenario:GWScenario):

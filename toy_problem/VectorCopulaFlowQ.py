@@ -6,6 +6,7 @@ from torch.distributions import constraints
 import math
 import numpy as np
 from scipy.stats import gaussian_kde
+from setUp import getPltDir
 
 def Blockdiag(B,dimList):
     Bdiag = B.clone()
@@ -14,7 +15,9 @@ def Blockdiag(B,dimList):
         ind = dim + prevDim
         Bdiag[:ind,ind:] = 0
         Bdiag[ind:,:ind] = 0   
-        prevDim = dim  
+        prevDim += dim  
+        
+    # print(f"is PSD: {is_psd(Bdiag)}")
     return Bdiag
 
 def kde_log_prob_scipy(x_train: torch.Tensor, x_eval: torch.Tensor, bw_method="scott", eps=1e-300):
@@ -177,6 +180,14 @@ def plot_kde_3d_overlay_from_result(
         "bandwidth_factor_eval": float(kde_eval.factor),
     }
 
+def is_psd(A, tol=1e-8):
+    # ensure symmetry first
+    if not torch.allclose(A, A.T, atol=tol):
+        return False
+    
+    eigvals = torch.linalg.eigvalsh(A)  # for symmetric/Hermitian matrices
+    return torch.all(eigvals >= -tol)
+
 class VectorCopulaFlowQ(TorchDistribution):
     arg_constraints = {}  # fill if you have constrained params
     support         = constraints.real_vector
@@ -227,7 +238,7 @@ class VectorCopulaFlowQ(TorchDistribution):
         if not torch.isfinite(Bd).all():
             raise RuntimeError("Blockdiag(OmegaBar) contains NaN/Inf")
 
-        # Bd = Bd + 1e-4 * eye
+        Bd = Bd + 1e-6 * eye
         L = torch.linalg.cholesky(Bd)
 
         A = torch.linalg.solve_triangular(L, eye, upper=False)
@@ -306,14 +317,9 @@ class VectorCopulaFlowQ(TorchDistribution):
             sample_2 = dist_2.rsample((N,))
         else:
             Z_1,Z_2 = self._sampleVectorCopula(N)
-            stdn = torch.distributions.Normal(
-                torch.tensor(0.),
-                torch.tensor(1.),
-            )
-            
             if self.useIdentityTransform:
-                sample_1 = Z_1
-                sample_2 = Z_2
+                sample_1 = torch.randn(N, 2)
+                sample_2 = torch.randn(N, 2)
             else:
                 sample_1 = dist_1.transform(Z_1)  #numerical shortcut can be removed so no \phi(\phi^-1)) be used because they are independent
                 sample_2 = dist_2.transform(Z_2)
@@ -331,8 +337,9 @@ class VectorCopulaFlowQ(TorchDistribution):
             return zeros,zeros,zeros
         Omega           = self._buildOmega()
         I               = torch.eye(4)
-        _, logabsdet    = torch.linalg.slogdet(Omega)
-        OmegaInv        = torch.linalg.solve(Omega, I) 
+        L = torch.linalg.cholesky(Omega)
+        OmegaInv = torch.cholesky_solve(I, L)
+        logabsdet = 2 * torch.log(torch.diagonal(L)).sum()
         PhiInv          = Q
         if len(Q.shape) == 2:
             einsum          = torch.einsum("ni,ij,nj->n", PhiInv, (OmegaInv- I), PhiInv)  #sum in order to deal with quadratic form dimensions
@@ -498,6 +505,7 @@ class VectorCopulaFlowQ(TorchDistribution):
         plt.xlabel("KDE log prob")
         plt.ylabel("Model log prob")
         plt.title("Model vs KDE log-density")
-        plt.savefig("toy_problem/model_vs_kde.png", dpi=300)
+        pltDir = getPltDir()
+        plt.savefig(pltDir+"model_vs_kde.png", dpi=300)
         plot_kde_3d_overlay_from_result(result,filename = 'toy_problem/kde_overaly_3d')
         return result

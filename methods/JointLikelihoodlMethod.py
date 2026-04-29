@@ -2,6 +2,8 @@ import bilby
 from jointRB import OverlappingSignalsRelBinning
 from .Method import Method
 from scenario import GWScenario
+from prior import prior
+from config import ScenarioConfig
 
 class JointLikelihoodlMethod(Method):
     def __init__(self,scenario:GWScenario,logger,config,pipeline_type_code:str):
@@ -34,17 +36,20 @@ class JointLikelihoodlMethod(Method):
             delta              = 0.001,  # RB binning tolerance
         )
         
-        # WJ 03/02/2026: code used for enforcing symmetry on the likelihood
-        # _base_log_likelihood_ratio = likelihood.log_likelihood_ratio
-        # def wrapped_log_likelihood_ratio(parameters=None):
-        #     # wrapped likelihood, add constraint on the prior to force the likelihood
-        #     p = parameters if parameters is not None else likelihood.parameters
-        #     if p["geocent_time_A"] >= p["geocent_time_B"]:
-        #         return -float("inf")
-            
-        #     return _base_log_likelihood_ratio(parameters=parameters)
+        _base_log_likelihood_ratio = likelihood.log_likelihood_ratio
+        def wrapped_log_likelihood_ratio(parameters=None):
+            # wrapped likelihood, add constraint on the prior to force the likelihood
+            p = parameters if parameters is not None else likelihood.parameters
+            p = dict(p)
+            p["geocent_time_A"] = p["geocent_time_B"] + p["delta_t_AB"]
+
+            if parameters is None:
+                likelihood.parameters.update(p)
+                return _base_log_likelihood_ratio(parameters=None)
+            else:
+                return _base_log_likelihood_ratio(parameters=p)
         
-        # likelihood.log_likelihood_ratio = wrapped_log_likelihood_ratio
+        likelihood.log_likelihood_ratio = wrapped_log_likelihood_ratio
         return likelihood
         
     def updateResults(self,result,likelihood = None):
@@ -62,7 +67,7 @@ class JointLikelihoodlMethod(Method):
 
     def getPrior(self):
         self.logger.info("$$$ getting the prior")
-        return self.getJointPriors()
+        return self.priorConstructor.getJointPriors()
     
     def log_diagnostic_tests(self,result,ifos_override):
         #tests for set-up function

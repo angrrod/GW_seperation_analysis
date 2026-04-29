@@ -34,12 +34,37 @@ def exctractResults(h5_path,logger):
         
         for method_name in methods:
             posteriors, diagnostics = readMethodPosteriorInfo(store, method_name,logger)
+            posteriors              = add_derived_times(posteriors)  #split for symmetry
             methodKey               = f"/methods/{method_name}/meta"
             methodInfo              = readMetaData(store,methodKey,'meta_json',logger)
             methodDict              = {'methodInfo' : methodInfo}
             results[method_name]    =  {'diagnostics' : methodDict | diagnostics,'posteriors': posteriors}
     return results
     
+def add_derived_times(posteriors):
+    for name, df in posteriors.items():
+        if not hasattr(df, "columns"):
+            continue
+
+        # Case 1: joint posterior table still has suffixed columns
+        if {"geocent_time_B", "delta_t_AB"}.issubset(df.columns):
+            df["geocent_time_A"] = df["geocent_time_B"] + df["delta_t_AB"]
+
+        # Case 2: already split posterior for A/B
+        # Example: posterior B contains geocent_time, posterior A needs derived geocent_time
+        if name in {"A", "waveform_A", "signal_A"}:
+            dfA = df
+            dfB = posteriors.get("B") or posteriors.get("waveform_B") or posteriors.get("signal_B")
+
+            if (
+                dfB is not None
+                and "geocent_time" not in dfA.columns
+                and "geocent_time" in dfB.columns
+                and "delta_t_AB" in dfA.columns
+            ):
+                dfA["geocent_time"] = dfB["geocent_time"].to_numpy() + dfA["delta_t_AB"].to_numpy()
+    return posteriors
+
 def readMethodPosteriorInfo(store, method_name,logger):
     logger.info("$$$ read method info")
     posteriors  = {}

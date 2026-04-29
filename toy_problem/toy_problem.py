@@ -13,7 +13,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 from NFs import NF_type
-from setUp import getModelParams
+from setUp import getModelParams, getPltDir
 from pyroPipes import pyroMarginalSVIPipeline,pyroCopulaSVIPipeline
 
 #continuous clamp
@@ -40,7 +40,8 @@ def getTrueParams():
     #     [0., 0.],
     #     [2., 2.],
     # ])
-    mean = torch.tensor([0.0,0.0,0.0,0.0])
+    # mean = torch.tensor([0.0,0.0,0.0,0.0]) 
+    mean = torch.tensor([2.0,2.0,2.0,2.0]) 
     # Sigma1 = torch.tensor([
     #     [1.0, 0.8],
     #     [0.8, 1.0]
@@ -88,9 +89,7 @@ def sample_true_data(N:int,true_params,known_cov):
     X = MultivariateNormal(loc=mu, covariance_matrix=Sigma).sample((N,))  # (N, d)
     return X
 
-def plot_posterior_marginals(pipe,X,save_dir="toy_problem", filename="true_marginals.png"):
-
-    os.makedirs(save_dir, exist_ok=True)
+def plot_posterior_marginals(pipe,X, filename="true_marginals.png"):
     mu_true, Sigma_true = getPosteriorTarget(
         X,
         priorVar=pipe.ModelParams["priorVar"],
@@ -113,7 +112,8 @@ def plot_posterior_marginals(pipe,X,save_dir="toy_problem", filename="true_margi
     axes[1].set_ylabel("x3")
 
     plt.tight_layout()
-    path = os.path.join(save_dir, filename)
+    save_dir = getPltDir()
+    path     = os.path.join(save_dir, filename)
     plt.savefig(path, dpi=150)
     plt.close(fig)
 
@@ -368,127 +368,16 @@ def test_custom_q_against_known_block_gaussian(pipe, n_test: int = 4096):
             "cov_fro": cov_err,
         }
 
-def plot_2d_samples(
-    samples: torch.Tensor,
-    filename: str,
-    xlabel: str = "x0",
-    ylabel: str = "x1",
-    title: str | None = None,
-    s: float = 5,
-    alpha: float = 0.5,
-):
-    samples_np = samples.detach().cpu().numpy()
-    
-    plt.figure(figsize=(6, 6))
-    plt.scatter(samples_np[:, 0], samples_np[:, 1], s=s, alpha=alpha)
-    plt.xlim(-5, 5)
-    plt.ylim(-5, 5)
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    if title is not None:
-        plt.title(title)
-    plt.savefig(filename, dpi=300, bbox_inches="tight")
-    plt.close()
-
-def plot_two_marginals(
-    samples_1: torch.Tensor,
-    samples_2: torch.Tensor,
-    filename: str,
-    titles: tuple[str, str] = ("Marginal [0,1]", "Marginal [2,3]"),
-    xlabels: tuple[str, str] = ("x0", "x2"),
-    ylabels: tuple[str, str] = ("x1", "x3"),
-    s: float = 5,
-    alpha: float = 0.5,
-):
-    s1 = samples_1.detach().cpu().numpy()
-    s2 = samples_2.detach().cpu().numpy()
-
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-
-    axes[0].scatter(s1[:, 0], s1[:, 1], s=s, alpha=alpha)
-    axes[0].set_xlim(-5, 5)
-    axes[0].set_ylim(-5, 5)
-    axes[0].set_title(titles[0])
-    axes[0].set_xlabel(xlabels[0])
-    axes[0].set_ylabel(ylabels[0])
-
-    axes[1].scatter(s2[:, 0], s2[:, 1], s=s, alpha=alpha)
-    axes[1].set_xlim(-5, 5)
-    axes[1].set_ylim(-5, 5)
-    axes[1].set_title(titles[1])
-    axes[1].set_xlabel(xlabels[1])
-    axes[1].set_ylabel(ylabels[1])
-
-    plt.tight_layout()
-    plt.savefig(filename, dpi=300, bbox_inches="tight")
-    plt.close(fig)
-
-# perform SVI optimization
-def plot_all_2d_pairs_fixed(
-    samples: torch.Tensor,
-    filename: str,
-    titles: list[str] | None = None,
-    s: float = 5,
-    alpha: float = 0.5,
-    xlim: tuple[float, float] = (-5, 5),
-    ylim: tuple[float, float] = (-5, 5),
-    figsize: tuple[float, float] = (15, 10),
-):
-    """
-    Plot all 6 pairwise 2D marginals of a 4D sample in a fixed 2x3 layout.
-    """
-    if samples.ndim != 2 or samples.shape[1] != 4:
-        raise ValueError(f"Expected samples of shape (N, 4), got {tuple(samples.shape)}")
-
-    pairs = [
-        (0, 1),
-        (0, 2),
-        (0, 3),
-        (1, 2),
-        (1, 3),
-        (2, 3),
-    ]
-
-    if titles is None:
-        titles = [f"Marginal [{i},{j}]" for i, j in pairs]
-
-    if len(titles) != 6:
-        raise ValueError(f"Expected exactly 6 titles, got {len(titles)}")
-
-    samples_np = samples.detach().cpu().numpy()
-
-    fig, axes = plt.subplots(2, 3, figsize=figsize)
-    axes = axes.ravel()
-
-    for ax, (i, j), title in zip(axes, pairs, titles):
-        ax.scatter(samples_np[:, i], samples_np[:, j], s=s, alpha=alpha)
-        ax.set_xlabel(f"theta[{i}]")
-        ax.set_ylabel(f"theta[{j}]")
-        ax.set_title(title)
-        ax.set_xlim(*xlim)
-        ax.set_ylim(*ylim)
-
-    plt.tight_layout()
-    plt.savefig(filename, dpi=300, bbox_inches="tight")
-    plt.close(fig)
-    
 def plotLoss(fileName:str,loss_list):
     plt.figure()
     plt.plot(np.log(loss_list))
     plt.xlabel("step")
     plt.ylabel("log loss")
     plt.title("SVI loss difference diagnostic")
+    pltDir = getPltDir()
+    plt.savefig(pltDir+fileName, dpi=300, bbox_inches="tight")
 
-    plt.savefig("toy_problem/"+fileName, dpi=300, bbox_inches="tight")
-
-def postProcessTest(loss_list,diagnostics,pipe,X):
-    N,_ = X.shape
-    loss_arr = np.array(loss_list) / N   # normalize per datapoint if you want
-    tail = loss_arr[-500:]  # last 500 steps
-    
-    print("mean loss:", tail.mean())
-    print("std loss:", tail.std())
-    
+def guideTests(pipe,X):
     samples = []
     with torch.no_grad():
         for _ in range(2000):
@@ -500,10 +389,7 @@ def postProcessTest(loss_list,diagnostics,pipe,X):
     print("guide mean:", samples.mean(dim=0))
     print("guide cov diag:", torch.cov(samples.T).diag())
     
-    # ---- plot diagnostic curve ----
-    plotLoss("svi_loss_diagnostic.png",loss_list)
-    
-    ## ---- logprob plots ----
+def logProbPlot(diagnostics,filename:str):
     total  = np.array([d["total"]  for d in diagnostics])
     marg1  = np.array([d["marg1"]  for d in diagnostics])
     marg2  = np.array([d["marg2"]  for d in diagnostics])
@@ -511,7 +397,7 @@ def postProcessTest(loss_list,diagnostics,pipe,X):
     gauss  = np.array([d["gauss"] for d in diagnostics])
     copula = np.array([d["copula"] for d in diagnostics])
     steps  = range(len(total))
-    filename = "log_prob_sample"
+    
     fig, ax1 = plt.subplots(figsize=(10, 6))
     # Left axis → component log-densities
     ax1.plot(steps, marg1, label="marg1", linewidth=2)
@@ -526,8 +412,30 @@ def postProcessTest(loss_list,diagnostics,pipe,X):
     ax1.grid(True)
     plt.title("SVI Diagnostics: Marginals, Copula, and Loss")
     plt.tight_layout()
-    plt.savefig("toy_problem/"+filename, dpi=300, bbox_inches="tight")
+    pltDir = getPltDir()
+    plt.savefig(pltDir+filename, dpi=300, bbox_inches="tight")
+    
+def postProcessTest(loss_list,diagnostics,pipe,X,run:int):
+    N,_ = X.shape
+    loss_arr = np.array(loss_list) / N   # normalize per datapoint if you want
+    tail = loss_arr[-500:]  # last 500 steps
+    
+    print("mean loss:", tail.mean())
+    print("std loss:", tail.std())
+    
+    guideTests(pipe,X)
+    
+    # ---- plot diagnostic curve ----
+    plotLoss(f"svi_loss_diagnostic_{run}.png",loss_list)
+    
+    # ---- logprob plots ----
+    if pipe.has_q:
+        logProbPlot(diagnostics,filename = f"log_prob_sample_{run}.png")
+    # ---- other tests ----
+    if pipe.has_q:
+        makeTests(pipe,X)
 
+def makeTests(pipe,X):
     # --- test 1 log_prob ---
     q = pipe.make_q()
     x = q.sample((4096,))
@@ -560,9 +468,9 @@ def postProcessTest(loss_list,diagnostics,pipe,X):
     mu1_samples = samples[:, 0:2]
     mu2_samples = samples[:, 2:4]
 
-    plotMarg(mu1_samples.T, filename="toy_problem/mu1_samples")
-    plotMarg(mu2_samples.T, filename="toy_problem/mu2_samples")
-    plotMarg(X.T, filename="toy_problem/data")
+    plotMarg(mu1_samples.T, filename=getPltDir()+"mu1_samples")
+    plotMarg(mu2_samples.T, filename=getPltDir()+"mu2_samples")
+    plotMarg(X.T, filename=getPltDir()+"data")
     
     # # --- 4 compare Posterior: ---
     compare_moments(samples,pipe,X)
@@ -616,107 +524,112 @@ def compare_moments(samples: torch.Tensor,pipe,X:torch.tensor):
     print(f"||mean_diff||_2 (Euclidean): {mean_l2}")
     print(f"||cov_diff||_F (Frobenius): {cov_fro}")
 
-#old debug code
-class GaussianGuide(nn.Module):
-    def __init__(self, dim=4, eps=1e-4):
-        super().__init__()
-        self.loc = nn.Parameter(torch.zeros(dim))
-        self.raw_L = nn.Parameter(0.01 * torch.randn(dim, dim))
-        self.eps = eps
-
-    def scale_tril(self):
-        L = torch.tril(self.raw_L)
-        diag = torch.diagonal(L)
-        diag = F.softplus(diag) + self.eps
-        L = L - torch.diag(torch.diagonal(L)) + torch.diag(diag)
-        return L
-
-    def dist(self):
-        return dist.MultivariateNormal(
-            loc=self.loc,
-            scale_tril=self.scale_tril(),
-        )
-
 def scenario(config:NF_type, suffix = "_NSF_INDEP",isIndependentCopula:bool = False,FreezeWeights:bool = False):
     #standardize the data
-    N             = 256
+    N             = 512
     known_cov     = getModelParams(isIndependentCopula)['cov']
     X             = sample_true_data(N, getTrueParams(),known_cov)
-    mu         = X.mean(0)
-    std        = X.std(0)
-    X          = (X - mu) / std
+    nRestarts     = 10
+    # standardize the data
+    # mu         = X.mean(0)
+    # std        = X.std(0)
+    # X          = (X - mu) / std
     
     #config
-    batch_size    = 64 #512 2048 128
+    batch_size    = 128 #512 2048 128
     num_particles = 5
     
-    pyro.clear_param_store()
-    pipe_init_1  = pyroMarginalSVIPipeline(
-        X[:,0:2],
-        batch_size          = batch_size,
-        indices             = slice(0, 2),
-        num_particles       = num_particles,
-        marginal_dim        = 2,
-        plot_dir            = "toy_problem/marginal_1" + suffix,
-        config              = config,
-        isIndependentCopula = isIndependentCopula
-        )
-    loss_list_1,_,flow_1_chkpt = pipe_init_1.trainModel(1000,10)
-    plotLoss("svi_loss_diagnostic_init_1.png",loss_list_1)
-    pipe_init_1.plot_samples(10000,"toy_problem/MarginalSample_1.png")
+    #debug options
+    runMarginals = True
     
-    pyro.clear_param_store()
-    pipe_init_2  = pyroMarginalSVIPipeline(
-        X[:,2:4],
-        batch_size          = batch_size,
-        indices             = slice(2, 4),
-        num_particles       = num_particles,
-        marginal_dim        = 2,
-        plot_dir            = "toy_problem/marginal_2" + suffix,
-        config              = config,
-        isIndependentCopula = isIndependentCopula
-        )
-    loss_list_2,_,flow_2_chkpt = pipe_init_2.trainModel(1000,10)
-    plotLoss("svi_loss_diagnostic_init_2.png",loss_list_2)
-    pipe_init_2.plot_samples(10000,"toy_problem/MarginalSample_2.png")
-    
-    ### --- Actual model ---
-    pyro.clear_param_store()
-    pipe = pyroCopulaSVIPipeline(
-            X,
+    if runMarginals:
+        pyro.clear_param_store()
+        pipe_init_1  = pyroMarginalSVIPipeline(
+            X[:,0:2],
             batch_size          = batch_size,
+            indices             = slice(0, 2),
             num_particles       = num_particles,
-            flow_1_chkpt        = flow_1_chkpt,
-            flow_2_chkpt        = flow_2_chkpt,
-            plot_dir            = "toy_problem/joint_SVI" + suffix,
+            marginal_dim        = 2,
+            plot_dir            = "toy_problem/plots/marginal_1" + suffix,
             config              = config,
-            isIndependentCopula = isIndependentCopula,
-            FreezeWeights       = FreezeWeights
-        )
-    
-    # --- pre-SVI unit tests for independent copula ---
+            isIndependentCopula = isIndependentCopula
+            )
+        loss_list_1,_,flow_1_chkpt = pipe_init_1.trainModel(1000,10,1)
+        plotLoss("svi_loss_diagnostic_init_1.png",loss_list_1)
+        pipe_init_1.plot_samples(10000,"toy_problem/plots/MarginalSample_1.png")
+        
+        pyro.clear_param_store()
+        pipe_init_2  = pyroMarginalSVIPipeline(
+            X[:,2:4],
+            batch_size          = batch_size,
+            indices             = slice(2, 4),
+            num_particles       = num_particles,
+            marginal_dim        = 2,
+            plot_dir            = "toy_problem/plots/marginal_2" + suffix,
+            config              = config,
+            isIndependentCopula = isIndependentCopula
+            )
+        loss_list_2,_,flow_2_chkpt = pipe_init_2.trainModel(1000,10,1)
+        plotLoss("svi_loss_diagnostic_init_2.png",loss_list_2)
+        pipe_init_2.plot_samples(10000,"toy_problem/plots/MarginalSample_2.png")
+    else:
+        flow_1_chkpt = None
+        flow_2_chkpt = None
+        
+    tail_loss_list = []
+    for run in range(nRestarts):
+        ### --- Actual model ---
+        pyro.clear_param_store()
+        pipe = pyroCopulaSVIPipeline(
+                X,
+                batch_size          = batch_size,
+                num_particles       = num_particles,
+                flow_1_chkpt        = flow_1_chkpt,
+                flow_2_chkpt        = flow_2_chkpt,
+                plot_dir            = "toy_problem/plots/joint_SVI" + suffix,
+                config              = config,
+                isIndependentCopula = isIndependentCopula,
+                FreezeWeights       = FreezeWeights
+            )
+        
+        # --- pre-SVI unit tests for independent copula ---
 
-    # test_independent_log_prob_matches_manual(pipe)
-    # test_independent_sampling_matches_block_structure(pipe)
-    # test_custom_q_against_known_block_gaussian(pipe)
-    ## rebuild fresh pipeline for actual training  
-    # pipe = pyroCopulaSVIPipeline(
-    #         X,
-    #         batch_size    = batch_size,
-    #         num_particles = num_particles,
-    #         flow_1_chkpt  = flow_1_chkpt,
-    #         flow_2_chkpt  = flow_2_chkpt,
-    #         plot_dir      = "toy_problem/joint_SVI"
-    #     )
-    
-    ### calculates theoretical posterior (for our model) 
-    ### and plots it (to be used for comparison)
-    plot_posterior_marginals(pipe,X)  
-    
-    #--- main part of the model of the model ---
-    loss_list,diagnostics,_ = pipe.trainModel(5000,10)
-    
-    postProcessTest(loss_list,diagnostics,pipe,X)
+        # test_independent_log_prob_matches_manual(pipe)
+        # test_independent_sampling_matches_block_structure(pipe)
+        # test_custom_q_against_known_block_gaussian(pipe)
+        ## rebuild fresh pipeline for actual training  
+        # pipe = pyroCopulaSVIPipeline(
+        #         X,
+        #         batch_size    = batch_size,
+        #         num_particles = num_particles,
+        #         flow_1_chkpt  = flow_1_chkpt,
+        #         flow_2_chkpt  = flow_2_chkpt,
+        #         plot_dir      = "toy_problem/joint_SVI"
+        #     )
+        
+        ### calculates theoretical posterior (for our model) 
+        ### and plots it (to be used for comparison)
+        plot_posterior_marginals(pipe,X)  
+        
+        #--- main part of the model of the model ---
+        Nsteps = 3000
+        loss_list,diagnostics,_ = pipe.trainModel(Nsteps,100,run)
+        tail_window = Nsteps//20
+        tail_loss = np.median(loss_list[-tail_window:])
+        tail_loss_list.append(tail_loss)
+        best_score = 1000000  #very high
+        if tail_loss < best_score:
+            best_score = tail_loss
+            best_run = {
+                "run": run,
+                "tail_loss": tail_loss,
+                "param_store": pyro.get_param_store().get_state(),
+                "loss_list": loss_list,
+            }
+            postProcessTest(loss_list,diagnostics,pipe,X,run)
+    print("best restart:", best_run["run"])
+    print("best score:", best_run["tail_loss"])
+    print("tail_loss_list:", tail_loss_list)
     
 def str2bool(v):
     if isinstance(v, bool):
@@ -743,7 +656,7 @@ def parse_args():
     parser.add_argument(
         "--suffix",
         type=str,
-        default="_NSF_DEFAULT",
+        default="_NSF_DEBUG_5",
         help="Suffix appended to output directories.",
     )
     parser.add_argument(

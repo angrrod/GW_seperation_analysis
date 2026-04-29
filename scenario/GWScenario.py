@@ -5,22 +5,20 @@ from bilby.gw.detector.networks import TriangularInterferometer
 from gwpy.timeseries import TimeSeries
 import matplotlib.pyplot as plt
 from dataclasses import asdict
-from scenario.ScenarioConfig import ScenarioConfig
+from config import ScenarioConfig, DynestyConfig
 import os, json, datetime
 from pathlib import Path
 import h5py
 from dataclasses import asdict
 from utils import get_base_log_dir
+from prior import prior
 class GWScenario:
-    def __init__(self, logger ,scenarioId, config : ScenarioConfig, injct_params_waves = None):
+    def __init__(self, logger ,scenarioId, config : ScenarioConfig):
         self.logger             = logger
         self.config             = config
         self.workdir            = get_base_log_dir() / "scenarioData"
         self.scenarioId         = scenarioId
-        if injct_params_waves is None:
-            self.injct_params_waves = self.GetWaveFormParams()
-        else:
-            self.injct_params_waves = injct_params_waves
+        self.prior              = prior(logger,DynestyConfig(),config)
             
         #set-up plotting dirs separate from post processing dir
         #parameters to be initialized during set_up:
@@ -68,6 +66,11 @@ class GWScenario:
         }}  
         )
         
+        if self.config.ineject_random_sample:
+            self.injct_params_waves = self._generateAcceptableSamples()
+        else:  
+            self.injct_params_waves = self.prior.GetWaveFormParamsFixed()
+            
         #inject N waves
         self.logger.info("$$$ injecting " + str(len(self.injct_params_waves)) + " waves")
         for inject_params in self.injct_params_waves:
@@ -86,7 +89,33 @@ class GWScenario:
             ]: 
             if k in converted[0]:
                 self.logger.info(f"$$$ {k}, {converted[0].get(k)}")
-                
+    
+    def _generateAcceptableSamples(self,max_attempts = 250,snr_min = 8,snr_max = 12):
+        self.logger.info("$$$ generating acceptable samples")
+        accepted = []
+        attempts = 0
+        n = 1 # only one pair
+        while len(accepted) < n and attempts < max_attempts:
+            attempts += 1
+
+            inj = self.prior.GetWaveFormParamsSampled()
+            snr1 = self._network_optimal_snr(inj[0])
+            snr2 = self._network_optimal_snr(inj[1])
+            self.logger.info(f"$$$ snr: {snr1:.3f} and {snr2:.3f}")
+            if (snr_min <= snr1 <= snr_max) and (snr_min <= snr2 <= snr_max):
+                inj[0]["injection_snr_1"] = snr1
+                inj[1]["injection_snr_2"] = snr2
+                accepted.append(inj)
+            else:
+                self.logger.debug(f"$$$ rejected injection: SNR={snr1:.3f} or {snr2:.3f}")
+        if len(accepted) < n:
+            raise RuntimeError(
+                f"Only found {len(accepted)} valid injections after {attempts} attempts. "
+                f"Try widening the SNR range or changing the distance prior."
+            )
+
+        return accepted[0]
+    
     def _getInterferrometerSetUp(self,PSD_ET,PSD_CE):
         
         # TODO: Test this
@@ -251,55 +280,6 @@ class GWScenario:
         self._PlotTimeSignalTwoEvents(ts, tcs, ts_noise, fileNames[0] + "_both", outDir)
         self._PlotQtrans(ts, fileNames[1], outDir) 
     
-    def GetWaveFormParams(self):
-        self.logger.info("$$$ getting waveform parameters")
-        
-        #convert masses to chirp and ratio
-        m1_1, m2_1   = 10.0, 8.0
-        m1_2, m2_2   = 15.0, 10.0
-        chirp_1, q_1 = self._massesToChirpAndQ(m1_1, m2_1)
-        chirp_2, q_2 = self._massesToChirpAndQ(m1_2, m2_2)
-        
-        self.logger.info(f"$$$ chirpmass {chirp_1} and mass ratio {q_1} for waveform 1")
-        self.logger.info(f"$$$ chirpmass {chirp_2} and mass ratio {q_2} for waveform 1")
-        
-        injct_params_wave_1 = dict(
-            chirp_mass          = chirp_1,
-            mass_ratio          = q_1,
-            a_1                 = 0.0,  #part of the spin of the black hole
-            a_2                 = 0.0,
-            tilt_1              = 0.0, #part of the spin of the black hole
-            tilt_2              = 0.0,
-            phi_12              = 0.0,  #part of the spin of the black hole
-            phi_jl              = 0.0,
-            luminosity_distance = 9000.0, #2000
-            theta_jn            = 0.2, #angle of angular momentum
-            psi                 = 2.659,  #angle of polarization
-            phase               = 0.9,
-            geocent_time        = self.config.duration*0.8,# 0.5,
-            ra                  = 1.375, 
-            dec                 = -0.2108, 
-        )
-        injct_params_wave_2 = dict(
-            chirp_mass          = chirp_2,
-            mass_ratio          = q_2,
-            a_1                 = 0.0,  #part of the spin of the black hole
-            a_2                 = 0.0,
-            tilt_1              = 0.0, #part of the spin of the black hole
-            tilt_2              = 0.0,
-            phi_12              = 0.0,  #part of the spin of the black hole
-            phi_jl              = 0.0,
-            luminosity_distance = 8000.0, #2000
-            theta_jn            = 1.5, #angle of angular momentum
-            psi                 = 2.659,  #angle of polarization
-            phase               = 1.2,
-            geocent_time        = self.config.duration*0.8 - self.config.time_delta,
-            ra                  = 1.2,
-            dec                 = -1.2, 
-        )
-        injct_params_waves = [injct_params_wave_1,injct_params_wave_2]
-        return injct_params_waves
-    
     def build_ref_injection(self,injections):
         """
         Convert [dictA, dictB, ...] → one dict with suffixes _A, _B, ...
@@ -313,15 +293,6 @@ class GWScenario:
                 joint[f"{key}_{suffix}"] = value
                 
         return joint
-    
-    def _massesToChirpAndQ(self,m1, m2):
-        # Ensure m1 >= m2 so that q = m2/m1 <= 1, as in bilby
-        if m1 < m2:
-            m1, m2 = m2, m1
-        q = m2 / m1                       # mass_ratio in (0, 1]
-        # chirp mass in solar masses
-        chirp = (m1 * m2) ** (3.0 / 5.0) / (m1 + m2) ** (1.0 / 5.0)
-        return chirp, q
     
     def load_psd(self,psd_name):
         # 1) Try HPC path
@@ -370,7 +341,15 @@ class GWScenario:
                     del g["strain_td"]
                 g.create_dataset("strain_td", data=td, compression="gzip", compression_opts=4)
                 
-        
+    def _network_optimal_snr(self, params: dict) -> float:
+        signal = self.wg.frequency_domain_strain(params)
+
+        snr2 = 0.0
+        for ifo in self.ifos:
+            ifo_signal = ifo.get_detector_response(signal, params)
+            snr2 += ifo.optimal_snr_squared(ifo_signal).real
+
+        return float(np.sqrt(snr2))
     def loadScenario(self):
         """
         Load ONLY the realized strain (time-domain) for the currently-constructed self.ifos
