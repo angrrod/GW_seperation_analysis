@@ -66,6 +66,7 @@ class GWScenario:
         }}  
         )
         
+        #TODO: !!!! ERROR
         if self.config.ineject_random_sample:
             self.injct_params_waves = self._generateAcceptableSamples()
         else:  

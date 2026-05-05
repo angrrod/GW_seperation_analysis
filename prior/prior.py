@@ -87,6 +87,7 @@ class prior():
                 elif waveformidx == 1:
                     priors[f"{key}_B"] = copy.deepcopy(prior)
         
+        # WJ: 04/05/2026 Old code to break symmetry for injected signals
         # break prior symmetry, ensure that one signal is later than the other
         # max_time_A = self.GetWaveFormParamsFixed()[0].get("geocent_time") #used in symmetry breaking
         # max_time_B = self.GetWaveFormParamsFixed()[1].get("geocent_time")
@@ -104,7 +105,7 @@ class prior():
         #                             )
         
         priors["geocent_time_A"] = bilby.core.prior.Uniform(
-            minimum=30,
+            minimum=20,
             maximum=50,
             name="geocent_time_A"
         )
@@ -114,6 +115,7 @@ class prior():
             maximum=10,   # choose physically reasonable max separation
             name="delta_t"
         )
+        del priors["geocent_time_B"]
         return priors
     
     def GetWaveFormParamsSampled(self):
@@ -121,6 +123,11 @@ class prior():
         injct = prior.sample()
         dict_A = self.filter_dict_by_suffix(injct, "_A")
         dict_B = self.filter_dict_by_suffix(injct, "_B")
+        # Reconstruct B time from A time and delta.
+        # Your fixed setup has A later than B:
+        # geocent_time_B = geocent_time_A - delta_t_AB
+        if "geocent_time" not in dict_B:
+            dict_B["geocent_time"] = dict_A["geocent_time"] - injct["delta_t_AB"]
         return [dict_A,dict_B]
     
     def filter_dict_by_suffix(self,d: dict, suffix: str) -> dict:

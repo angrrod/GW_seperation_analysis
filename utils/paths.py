@@ -14,3 +14,12 @@ def get_base_work_dir() -> Path:
     if "VSC_DATA" in os.environ:
         return Path(os.environ.get("GW_INP_DIR", os.environ["VSC_DATA"]))
     return Path(".")
+
+def get_dingo_dir() -> Path:
+    return get_base_work_dir() / "Dingo"
+
+def get_dingo_dir_yamls() -> Path:
+    return get_dingo_dir() / "configs"
+
+def get_dingo_dir_data() -> Path:
+    return get_dingo_dir() / "data"

@@ -5,7 +5,7 @@ import copy
 import numpy as np
 import bilby
 import torch
-from .Pipeline import Pipeline
+from .Pipeline_Sampler import Pipeline_Sampler
 from bilby.gw.utils import noise_weighted_inner_product
 from utils import get_base_log_dir,get_base_work_dir
 
@@ -16,7 +16,7 @@ import trainer.denoise_pytorch_trainer
 from model.model_rnn import Dual_RNN_model
 from trainer.end_to_end_denoise_saparate_trainer import CombinedModel
 
-class TasNetPipeline(Pipeline):
+class TasNetPipeline(Pipeline_Sampler):
     def __init__(self,logger,scenario:GWScenario):
         super().__init__(logger, scenario)
         self.pipeline_type  = Pipeline_type.TASNET

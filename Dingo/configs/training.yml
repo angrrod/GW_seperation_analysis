@@ -1,0 +1,117 @@
+data:
+  waveform_dataset_path: Dingo/data/waveform_dataset.hdf5
+  extrinsic_prior:
+    luminosity_distance: bilby.gw.prior.UniformSourceFrame(minimum=20000.0, maximum=150000.0,
+      name='luminosity_distance')
+    dec: bilby.core.prior.Cosine(name='dec')
+    ra: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='ra')
+    theta_jn: bilby.core.prior.Sine(name='theta_jn')
+    psi: bilby.core.prior.Uniform(minimum=0.0, maximum=3.141592653589793, name='psi')
+    phase: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='phase')
+    geocent_time: bilby.core.prior.Uniform(minimum=0.0, maximum=64.0, name='geocent_time')
+  train_fraction: 0.95
+  domain_update:
+    f_min: 10.0
+    f_max: 1024.0
+  detectors:
+  - H1
+  - L1
+  inference_parameters:
+  - mass_1
+  - mass_2
+  - a_1
+  - a_2
+  - tilt_1
+  - tilt_2
+  - phi_12
+  - phi_jl
+  - theta_jn
+  - luminosity_distance
+  - geocent_time
+  - ra
+  - dec
+  - psi
+  ref_time: 0.0
+model:
+  posterior_model_type: normalizing_flow
+  posterior_kwargs:
+    num_flow_steps: 30
+    base_transform_kwargs:
+      hidden_dim: 1024
+      num_transform_blocks: 5
+      activation: elu
+      dropout_probability: 0.0
+      batch_norm: true
+      num_bins: 8
+      base_transform_type: rq-coupling
+  embedding_kwargs:
+    output_dim: 128
+    hidden_dims:
+    - 1024
+    - 1024
+    - 1024
+    - 1024
+    - 1024
+    - 1024
+    - 512
+    - 512
+    - 512
+    - 512
+    - 512
+    - 512
+    - 256
+    - 256
+    - 256
+    - 256
+    - 256
+    - 256
+    - 128
+    - 128
+    - 128
+    - 128
+    - 128
+    - 128
+    activation: elu
+    dropout: 0.0
+    batch_norm: true
+    svd:
+      num_training_samples: 50000
+      num_validation_samples: 10000
+      size: 200
+training:
+  stage_0:
+    epochs: 300
+    asd_dataset_path: Dingo/data/asd_dataset.hdf5
+    freeze_rb_layer: true
+    optimizer:
+      type: adam
+      lr: 5.0e-05
+    scheduler:
+      type: cosine
+      T_max: 300
+    batch_size: 4096
+  stage_1:
+    epochs: 150
+    asd_dataset_path: training_data/asd_dataset/asds_O1.hdf5
+    freeze_rb_layer: false
+    optimizer:
+      type: adam
+      lr: 1.0e-05
+    scheduler:
+      type: cosine
+      T_max: 150
+    batch_size: 4096
+local:
+  device: cpu
+  num_workers: 4
+  runtime_limits:
+    max_time_per_run: 3600000
+    max_epochs_per_run: 500
+  checkpoint_epochs: 10
+  leave_waveforms_on_disk: true
+  condor:
+    num_cpus: 2
+    memory_cpus: 128000
+    num_gpus: 1
+    memory_gpus: 8000
+    request_disk: 50GB
