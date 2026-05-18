@@ -529,7 +529,7 @@ def scenario(config:NF_type, suffix = "_NSF_INDEP",isIndependentCopula:bool = Fa
     N             = 512
     known_cov     = getModelParams(isIndependentCopula)['cov']
     X             = sample_true_data(N, getTrueParams(),known_cov)
-    nRestarts     = 10
+    nRestarts     = 1
     # standardize the data
     # mu         = X.mean(0)
     # std        = X.std(0)
@@ -540,7 +540,7 @@ def scenario(config:NF_type, suffix = "_NSF_INDEP",isIndependentCopula:bool = Fa
     num_particles = 5
     
     #debug options
-    runMarginals = True
+    runMarginals = False
     
     if runMarginals:
         pyro.clear_param_store()
@@ -612,12 +612,12 @@ def scenario(config:NF_type, suffix = "_NSF_INDEP",isIndependentCopula:bool = Fa
         plot_posterior_marginals(pipe,X)  
         
         #--- main part of the model of the model ---
-        Nsteps = 3000
+        Nsteps = 7000
         loss_list,diagnostics,_ = pipe.trainModel(Nsteps,100,run)
         tail_window = Nsteps//20
         tail_loss = np.median(loss_list[-tail_window:])
         tail_loss_list.append(tail_loss)
-        best_score = 1000000  #very high
+        best_score = 10000000  #very high
         if tail_loss < best_score:
             best_score = tail_loss
             best_run = {
@@ -656,7 +656,7 @@ def parse_args():
     parser.add_argument(
         "--suffix",
         type=str,
-        default="_NSF_DEBUG_5",
+        default="_NSF_DEBUG_6",
         help="Suffix appended to output directories.",
     )
     parser.add_argument(

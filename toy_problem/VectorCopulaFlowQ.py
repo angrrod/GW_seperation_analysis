@@ -10,11 +10,11 @@ from setUp import getPltDir
 
 def Blockdiag(B,dimList):
     Bdiag = B.clone()
+    
     prevDim = 0
     for dim in dimList:
         ind = dim + prevDim
-        Bdiag[:ind,ind:] = 0
-        Bdiag[ind:,:ind] = 0   
+        Bdiag[prevDim:ind,prevDim:ind] = torch.eye(dim)
         prevDim += dim  
         
     # print(f"is PSD: {is_psd(Bdiag)}")

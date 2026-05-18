@@ -25,7 +25,7 @@ class GWScenario:
         self.ifos          = None
         self.noise_td      = None #for plotting
         self.wg            = None
-        
+    
     def setUpScenario(self):
         """
         generates the waveform and interferrometer data structures
@@ -66,11 +66,14 @@ class GWScenario:
         }}  
         )
         
-        #TODO: !!!! ERROR
-        if self.config.ineject_random_sample:
-            self.injct_params_waves = self._generateAcceptableSamples()
-        else:  
-            self.injct_params_waves = self.prior.GetWaveFormParamsFixed()
+        if self.config.generate_new_signal:
+            if self.config.ineject_random_sample:
+                self.injct_params_waves = self._generateAcceptableSamples()
+            else:  
+                self.injct_params_waves = self.prior.GetWaveFormParamsFixed()
+            self.save_signal()
+        else:
+            self.load_signal()
             
         #inject N waves
         self.logger.info("$$$ injecting " + str(len(self.injct_params_waves)) + " waves")
@@ -186,7 +189,6 @@ class GWScenario:
         return ts, ts_noise
     
     ### plots ###
-        
     def _PlotTimeSignalTwoEvents(self, ts, tcs, ts_noise, fileName, outDir,
                                 pad_left=5.0, pad_right=0.5):
         self.logger.info("$$$ making time domain plot (two events)")
@@ -237,8 +239,7 @@ class GWScenario:
 
         path = os.path.join(outDir, f"{fileName}.png")
         fig.savefig(path, dpi=300, bbox_inches="tight")
-
-                
+    
     def _PlotQtrans(self,ts,fileName,outDir):
         self.logger.info("$$$ making Qtransformed plot")
 
@@ -261,7 +262,7 @@ class GWScenario:
         ax.set_title("Q-transform of strain (zoom)")
         path = os.path.join(outDir, f"{fileName}.png")
         fig.savefig(path, dpi=300, bbox_inches="tight")
-        
+    
     def makePlots(self,fileNames,outDir,ifos = None):
         self.logger.info("$$$ making plots from ifo")
         idx = 4
@@ -310,11 +311,58 @@ class GWScenario:
             return bilby.gw.detector.PowerSpectralDensity.from_power_spectral_density_file(
                 psd_file=psd_name
             )
-
+    
     def getScenarioPath(self) -> Path:
         self.workdir.mkdir(parents=True, exist_ok=True)
         return self.workdir / f"Scenario_{self.scenarioId}.h5"
-        
+    
+    def getSignalPath(self) -> Path:
+        """
+        Path for the injection/signal parameters associated with this scenario.
+        """
+        self.workdir.mkdir(parents=True, exist_ok=True)
+        return self.workdir / f"Scenario_{self.scenarioId}_signal.json"
+    
+    def save_signal(self):
+        """
+        Save the injection parameters used for this scenario.
+
+        This stores only the signal/injection parameter dictionaries, not the
+        detector strain. The strain should still be saved separately by
+        saveScenario() or another event-saving function.
+        """
+        path = self.getSignalPath()
+        self.logger.info(f"$$$ Save signal parameters to {path}")
+
+        if not hasattr(self, "injct_params_waves"):
+            raise RuntimeError(
+                "Cannot save signal parameters: self.injct_params_waves is not set."
+            )
+
+        with open(path, "w") as f:
+            json.dump(self.injct_params_waves, f, indent=2, default=float)
+    
+    def load_signal(self):
+        """
+        Load injection parameters for this scenario.
+
+        After calling this, self.injct_params_waves is available and can be
+        injected into the interferometers.
+        """
+        path = self.getSignalPath()
+        self.logger.info(f"$$$ Load signal parameters from {path}")
+
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Signal parameter file does not exist: {path}. "
+                "Set generate_new_signal=True first to create it."
+            )
+
+        with open(path, "r") as f:
+            self.injct_params_waves = json.load(f)
+
+        return self.injct_params_waves
+    
     def saveScenario(self):
         # save the ifos set-up to deal with good reproducability 
         dir = self.getScenarioPath()
@@ -341,7 +389,7 @@ class GWScenario:
                 if "strain_td" in g: #replace if it already esists
                     del g["strain_td"]
                 g.create_dataset("strain_td", data=td, compression="gzip", compression_opts=4)
-                
+    
     def _network_optimal_snr(self, params: dict) -> float:
         signal = self.wg.frequency_domain_strain(params)
 
@@ -351,6 +399,7 @@ class GWScenario:
             snr2 += ifo.optimal_snr_squared(ifo_signal).real
 
         return float(np.sqrt(snr2))
+    
     def loadScenario(self):
         """
         Load ONLY the realized strain (time-domain) for the currently-constructed self.ifos

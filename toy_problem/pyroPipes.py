@@ -215,9 +215,9 @@ class pyroPipe(ABC):
                 # print("\n--- Pyro marginals of estimated Q ---")
                 
                 # marginals
-                if self.has_q:
-                    q = self.make_q()
-                    samples = q.sample((5000,))   # (5000, 4)
+                # if self.has_q:
+                #     q = self.make_q()
+                #     samples = q.sample((5000,))   # (5000, 4)
                 if self.plot_during_training:
                     self.plot_training_state(step=step,run = run, n_samples=5000)
                 

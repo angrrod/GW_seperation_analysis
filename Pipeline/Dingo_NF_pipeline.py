@@ -15,6 +15,10 @@ from dingo.gw.training.train_pipeline import (
 import numpy as np
 from dingo.gw.domains import build_domain
 from dingo.gw.noise.asd_dataset import ASDDataset
+import math
+import torch
+import pyro.distributions as dist
+from torch.distributions import constraints
 
 def read_yaml(path: Path) -> dict:
     with open(path, "r") as f:
@@ -29,20 +33,31 @@ def write_yaml(path: Path, obj: dict):
     with open(path, "w") as f:
         yaml.safe_dump(obj, f, sort_keys=False)
         
-
 class DINGO_pipeline(Pipeline_Amortized):
     def __init__(self, logger, scenario:GWScenario):
         super().__init__(logger, scenario)
         self.MethodConfig   = DynestyConfig()  #temporary dummy method
         # set up YML's so that scenario is correctly translated to bilby
-        self.set_up() 
         # self.pipeline_type = Pipeline_type.DINGO
-    
+        self.train_dir = get_dingo_dir_data() / "training_run"
+        os.makedirs(self.train_dir, exist_ok=True)
+        self.export_configs()
+        
+        with open(self.config_paths["train"], "r") as f:
+            self.train_settings = yaml.safe_load(f)
+
+        self.local_settings = self.train_settings.pop("local") #.pop("local")
+        
+        self.set_up() 
+        pm,wfd   = self.prerp_train()
+        self.model  = pm
+        self.wfd = wfd
+
     def run_cmd(self, cmd):
         cmd = [str(c) for c in cmd]
         self.logger.info("$$$ running: " + " ".join(cmd))
         subprocess.run(cmd, check=True)
-    
+
     def _resolve_input_file(self, filename: str) -> Path:
         base = os.environ.get("GW_INP_DIR")
         if base is not None:
@@ -198,11 +213,13 @@ class DINGO_pipeline(Pipeline_Amortized):
         dst = get_dingo_dir_yamls() / "asd_dataset_settings.yml"
         write_yaml(dst, yml)
         return dst
-    
+
     def _patch_training_yaml(self):
         cfg = self.scenario.config
+        
+        training_name = "training_copula.yml"# "training.yml"
 
-        train_yml = read_yaml(get_dingo_dir_yamls() / "training.yml")
+        train_yml = read_yaml(get_dingo_dir_yamls() / training_name)
         waveform_yml = read_yaml(get_dingo_dir_yamls() / "waveform_dataset_settings.yml")
 
         train_yml.setdefault("data", {})
@@ -241,7 +258,7 @@ class DINGO_pipeline(Pipeline_Amortized):
         train_yml["local"].setdefault("num_workers", 1)
         train_yml["local"].setdefault("leave_waveforms_on_disk", True)
 
-        dst = get_dingo_dir_yamls() / "training.yml"
+        dst = get_dingo_dir_yamls() / training_name
         write_yaml(dst, train_yml)
         return dst
 
@@ -272,6 +289,8 @@ class DINGO_pipeline(Pipeline_Amortized):
             self.artifact_paths["waveform_dataset"],
             "--num_processes",
             str(self.MethodConfig.cores),
+            "--num_signals",
+            2
         ])
 
     #TODO: fix this
@@ -359,9 +378,7 @@ class DINGO_pipeline(Pipeline_Amortized):
 
         self.logger.info(f"$$$ wrote custom DINGO ASD dataset: {out_file}")
 
-    def set_up(self):
-        self.export_configs()
-        
+    def set_up(self):        
         #generate data
         # if not self.artifact_paths["waveform_dataset"].exists():
         self.generate_waveform_dataset()
@@ -369,43 +386,57 @@ class DINGO_pipeline(Pipeline_Amortized):
         # if not self.artifact_paths["asd_dataset"].exists():
         self.generate_asd_dataset()
 
-    def train(self):
-        train_dir = get_dingo_dir_data() / "training_run"
-        os.makedirs(train_dir, exist_ok=True)
-
-        with open(self.config_paths["train"], "r") as f:
-            train_settings = yaml.safe_load(f)
-
-        local_settings = train_settings.pop("local") #.pop("local")
+    def prerp_train(self):
 
         pm, wfd = prepare_training_new(
-            train_settings=train_settings,
-            train_dir=str(train_dir),
-            local_settings=local_settings,
+            train_settings=self.train_settings,
+            train_dir=str(self.train_dir),
+            local_settings=self.local_settings,
         )
-
-        with threadpool_limits(limits=1, user_api="blas"):
-            complete = train_stages(
-                pm=pm,
-                wfd=wfd,
-                train_dir=str(train_dir),
-                local_settings=local_settings,
-            )
 
         self.model = pm
         self.waveform_dataset = wfd
-        self.training_complete = complete
+        return pm,wfd
 
-        return pm
-    
-    def convert_to_zuko(self):
-        raise NotImplementedError
+    def train(self,start_from_checkpoint = False):
+        if start_from_checkpoint:
+            self.load_model()
+
+        with threadpool_limits(limits=1, user_api="blas"):
+            complete = train_stages(
+                pm=self.model,
+                wfd=self.waveform_dataset,
+                train_dir=str(self.train_dir),
+                local_settings=self.local_settings,
+            )
+        return complete
+
+    def _torch_load(self, path: Path):
+        """
+        Wrapper for torch.load that is robust across PyTorch versions.
+        Newer PyTorch versions may use weights_only by default.
+        """
+        device = self.local_settings.get("device", "cpu")
+        kwargs = {"map_location": torch.device(device)}
+
+        try:
+            return torch.load(path, **kwargs, weights_only=False)
+        except TypeError:
+            return torch.load(path, **kwargs)
+
+    def load_model(self):
+        latest_model_path =  self.train_dir / "model_latest.pt"
+        chkpt_latest = self._torch_load(latest_model_path)
+        self.model.network.load_state_dict(chkpt_latest, strict=False)
 
     def build_dingo_model(self):
         raise NotImplementedError
 
-    def load_model(self):
-        raise NotImplementedError
-
     def infer(self):
+        raise NotImplementedError
+    
+    def run(self):
+        """
+        High level function to be used for the general test pipeline
+        """
         raise NotImplementedError

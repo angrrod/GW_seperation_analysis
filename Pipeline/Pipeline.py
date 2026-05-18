@@ -8,4 +8,7 @@ class Pipeline(ABC):
         self.logger        = logger
         self.scenario      = scenario
         self.pipeline_type = None
-    
+        
+    @abstractmethod
+    def run(self, *args, **kwargs):
+        raise NotImplementedError

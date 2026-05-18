@@ -12,3 +12,4 @@ class ScenarioConfig:
     ASD_file_name_CE: str      = "cosmic_explorer_strain"
     UseRelBinning: bool        = True 
     ineject_random_sample:bool = True
+    generate_new_signal:bool   = False

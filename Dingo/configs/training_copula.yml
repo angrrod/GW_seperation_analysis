@@ -28,22 +28,47 @@ data:
   - theta_jn
   - luminosity_distance
   - geocent_time
+  - phase
   - ra
   - dec
   - psi
   ref_time: 0.0
 model:
-  posterior_model_type: normalizing_flow
-  posterior_kwargs:   #add extra for NSF block + copula params
-    num_flow_steps: 30
-    base_transform_kwargs:
-      hidden_dim: 128
-      num_transform_blocks: 5
+  posterior_model_type: copula_normalizing_flow
+  posterior_kwargs:
+    input_dim: 30
+    context_dim: 128
+    block_dims:
+    - 15
+    - 15
+    flow_1:
+      num_flow_steps: 5
+      base_transform_kwargs:
+        hidden_dim: 128
+        num_transform_blocks: 5
+        activation: elu
+        dropout_probability: 0.0
+        batch_norm: true
+        num_bins: 8
+        base_transform_type: rq-coupling
+    flow_2:
+      num_flow_steps: 5
+      base_transform_kwargs:
+        hidden_dim: 128
+        num_transform_blocks: 5
+        activation: elu
+        dropout_probability: 0.0
+        batch_norm: true
+        num_bins: 8
+        base_transform_type: rq-coupling
+    CopulaKwargs:
+      p: 1
+      hidden_dims:
+      - 64
+      - 64
       activation: elu
-      dropout_probability: 0.0
-      batch_norm: true
-      num_bins: 8
-      base_transform_type: rq-coupling
+      dropout: 0.0
+      batch_norm: false
   embedding_kwargs:
     output_dim: 128
     hidden_dims:
