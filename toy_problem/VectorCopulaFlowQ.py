@@ -14,7 +14,8 @@ def Blockdiag(B,dimList):
     prevDim = 0
     for dim in dimList:
         ind = dim + prevDim
-        Bdiag[prevDim:ind,prevDim:ind] = torch.eye(dim)
+        Bdiag[:ind,ind:] = 0
+        Bdiag[ind:,:ind] = 0   
         prevDim += dim  
         
     # print(f"is PSD: {is_psd(Bdiag)}")
@@ -215,7 +216,7 @@ class VectorCopulaFlowQ(TorchDistribution):
                 1
             ).squeeze(0)
 
-        N = math.prod(sample_shape)
+        N = math.prod(sample_shape) #get one dimensional samples of size equal to the dimensions of the sample
         
         return self._sampleVectorCopulaModel(
             N
@@ -241,7 +242,7 @@ class VectorCopulaFlowQ(TorchDistribution):
         Bd = Bd + 1e-6 * eye
         L = torch.linalg.cholesky(Bd)
 
-        A = torch.linalg.solve_triangular(L, eye, upper=False)
+        A = torch.inverse(L)
         Omega = A @ OmegaBar @ A.T
 
         if not torch.isfinite(Omega).all():
@@ -317,12 +318,12 @@ class VectorCopulaFlowQ(TorchDistribution):
             sample_2 = dist_2.rsample((N,))
         else:
             Z_1,Z_2 = self._sampleVectorCopula(N)
-            if self.useIdentityTransform:
-                sample_1 = torch.randn(N, 2)
-                sample_2 = torch.randn(N, 2)
-            else:
-                sample_1 = dist_1.transform(Z_1)  #numerical shortcut can be removed so no \phi(\phi^-1)) be used because they are independent
-                sample_2 = dist_2.transform(Z_2)
+            # if self.useIdentityTransform:
+            #     sample_1 = torch.randn(N, 2)
+            #     sample_2 = torch.randn(N, 2)
+            # else:
+            sample_1 = dist_1.transform(Z_1)  #numerical shortcut can be removed so no \phi(\phi^-1)) be used because they are independent
+            sample_2 = dist_2.transform(Z_2)
         return torch.cat([sample_1,sample_2], dim=1)
 
     def _logProbCopula(self,Q,d = 4):
@@ -344,7 +345,7 @@ class VectorCopulaFlowQ(TorchDistribution):
         if len(Q.shape) == 2:
             einsum          = torch.einsum("ni,ij,nj->n", PhiInv, (OmegaInv- I), PhiInv)  #sum in order to deal with quadratic form dimensions
         else: #len = 1 so one event
-            einsum = PhiInv @ (OmegaInv- I) @ PhiInv
+            einsum = PhiInv @ (OmegaInv- I) @ PhiInv.T
         logDetTerm      = (-1/2)*logabsdet
         logCopulaTerm   = (-1/2)*einsum
         logDensity      = logDetTerm + logCopulaTerm #for exact expression, constant is needed-> not used

@@ -19,6 +19,7 @@ import math
 import torch
 import pyro.distributions as dist
 from torch.distributions import constraints
+from dingo.gw.dataset.generate_dataset import _generate_dataset_main
 
 def read_yaml(path: Path) -> dict:
     with open(path, "r") as f:
@@ -112,7 +113,7 @@ class DINGO_pipeline(Pipeline_Amortized):
         raise NotImplementedError(f"Do not know how to export prior {name}: {cls}")
 
     def _export_prior_yaml_blocks(self,fixed_extrinsic_prior = True) -> tuple[dict, dict]:
-        INTRINSIC_PARAMS = {
+        INTRINSIC_BASE_PARAMS = {
             "mass_1",
             "mass_2",
             "chirp_mass", 
@@ -125,7 +126,7 @@ class DINGO_pipeline(Pipeline_Amortized):
             "phi_jl",
         }
 
-        EXTRINSIC_PARAMS = {
+        EXTRINSIC_BASE_PARAMS = {
             "luminosity_distance" : 100.0,
             "dec"                 : 0.0,
             "ra"                  : 0.0,
@@ -134,23 +135,42 @@ class DINGO_pipeline(Pipeline_Amortized):
             "phase"               : 0.0,
             "geocent_time"        : 0.0,
         }
-        prior_dict = self.scenario.prior.GetSinglePrior()
+        
+        SIGNAL_SUFFIXES = ("_A", "_B")
+        
+        INTRINSIC_PARAMS = {
+            f"{name}{suffix}"
+            for name in INTRINSIC_BASE_PARAMS
+            for suffix in SIGNAL_SUFFIXES
+        }
+
+        EXTRINSIC_PARAMS = {
+            f"{name}{suffix}": default
+            for name, default in EXTRINSIC_BASE_PARAMS.items()
+            for suffix in SIGNAL_SUFFIXES
+        }
+        
+        EXTRINSIC_PARAMS["delta_t_AB"] = 0.01
+        prior_dict = self.scenario.prior.getJointPriors()
 
         intrinsic_prior = {}
         extrinsic_prior = {}
 
         # DINGO waveform datasets usually want component masses,
         # not chirp_mass/mass_ratio.
-        intrinsic_prior["mass_1"] = (
-            "bilby.core.prior.Uniform("
-            "minimum=5.0, maximum=40.0, name='mass_1')"
-        )
-        intrinsic_prior["mass_2"] = (
-            "bilby.core.prior.Uniform("
-            "minimum=4.0, maximum=30.0, name='mass_2')"
-        )
+        suffixes = ["_A","_B"]
+        skip = set()
+        for suffix in suffixes:
+            intrinsic_prior[f"mass_1{suffix}"] = (
+                "bilby.core.prior.Uniform("
+                "minimum=5.0, maximum=40.0, name='mass_1')"
+            )
+            intrinsic_prior[f"mass_2{suffix}"] = (
+                "bilby.core.prior.Uniform("
+                "minimum=4.0, maximum=30.0, name='mass_2')"
+            )
 
-        skip = {"chirp_mass", "mass_ratio", "mass_1", "mass_2"}
+            skip.update([f"chirp_mass{suffix}", f"mass_ratio{suffix}", f"mass_1{suffix}", f"mass_2{suffix}"])
 
         for name, p in prior_dict.items():
             if name in skip:
@@ -281,17 +301,23 @@ class DINGO_pipeline(Pipeline_Amortized):
         if not self.config_paths:
             self.export_configs()
 
-        self.run_cmd([
-            "dingo_generate_dataset",
-            "--settings",
-            self.config_paths["waveform"],
-            "--out_file",
-            self.artifact_paths["waveform_dataset"],
-            "--num_processes",
-            str(self.MethodConfig.cores),
-            "--num_signals",
-            2
-        ])
+        settings_file = str(self.config_paths["waveform"])
+        out_file = str(self.artifact_paths["waveform_dataset"])
+        num_processes = int(self.MethodConfig.cores)
+        num_signals = 2
+
+        self.logger.info(
+            "$$$ generating DINGO waveform dataset directly: "
+            f"settings={settings_file}, out_file={out_file}, "
+            f"num_processes={num_processes}, num_signals={num_signals}"
+        )
+
+        _generate_dataset_main(
+            settings_file=settings_file,
+            out_file=out_file,
+            num_processes=num_processes,
+            num_signals=num_signals,
+        )
 
     #TODO: fix this
     def generate_asd_dataset(self):
