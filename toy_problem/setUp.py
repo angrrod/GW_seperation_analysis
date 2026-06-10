@@ -4,9 +4,9 @@ import os
 def getModelParams(isIndependentCopula:bool = True):
     #prior and likl models for pyro
     if isIndependentCopula:
-        cov = 10*torch.eye(4)
+        cov = 1e6*torch.eye(4)
     else:
-        cov = 10*torch.tensor([ 
+        cov = 1e6*torch.tensor([ 
                 [1.0, 0.5, 0.1, 0.3],
                 [0.5, 1.0, 0.2, 0.05],
                 [0.1, 0.2, 1.0, 0.45],
@@ -16,7 +16,7 @@ def getModelParams(isIndependentCopula:bool = True):
     params = {
         "means"    : torch.tensor([0.0,0.0,0.0,0.0]),
         "cov"      : cov,
-        "priorVar" : 10,
+        "priorVar" : 1e5,
     }
     return params
 

@@ -50,9 +50,9 @@ class DINGO_pipeline(Pipeline_Amortized):
         self.local_settings = self.train_settings.pop("local") #.pop("local")
         
         self.set_up() 
-        pm,wfd   = self.prerp_train()
-        self.model  = pm
-        self.wfd = wfd
+        pm,wfd     = self.prerp_train()
+        self.model = pm
+        self.wfd   = wfd
 
     def run_cmd(self, cmd):
         cmd = [str(c) for c in cmd]
@@ -104,12 +104,18 @@ class DINGO_pipeline(Pipeline_Amortized):
             )
 
         if cls == "UniformSourceFrame":
-            return (
-                f"bilby.gw.prior.UniformSourceFrame("
-                f"minimum={float(p.minimum)}, maximum={float(p.maximum)}, "
-                f"name='{name}')"
-            )
-
+            if name in {"luminosity_distance_A","luminosity_distance_B"}:
+                return (
+                    f"bilby.gw.prior.UniformSourceFrame("
+                    f"minimum={float(p.minimum)}, maximum={float(p.maximum)}, "
+                    f"name=luminosity_distance)"
+                )
+            else:
+                return (
+                    f"bilby.gw.prior.UniformSourceFrame("
+                    f"minimum={float(p.minimum)}, maximum={float(p.maximum)}, "
+                    f"name='{name}')"
+                )
         raise NotImplementedError(f"Do not know how to export prior {name}: {cls}")
 
     def _export_prior_yaml_blocks(self,fixed_extrinsic_prior = True) -> tuple[dict, dict]:
@@ -150,7 +156,7 @@ class DINGO_pipeline(Pipeline_Amortized):
             for suffix in SIGNAL_SUFFIXES
         }
         
-        EXTRINSIC_PARAMS["delta_t_AB"] = 0.01
+        EXTRINSIC_PARAMS["delta_t_AB"] = 0.0
         prior_dict = self.scenario.prior.getJointPriors()
 
         intrinsic_prior = {}
@@ -319,7 +325,7 @@ class DINGO_pipeline(Pipeline_Amortized):
             num_signals=num_signals,
         )
 
-    #TODO: fix this
+    #TODO: fix this EINSTEIN set up
     def generate_asd_dataset(self):
         """
         Create a DINGO-compatible ASDDataset HDF5 from a fixed custom PSD/ASD file.

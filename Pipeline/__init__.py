@@ -7,7 +7,6 @@ from .SingleLikelihoodPipeline import SingleLikelihoodPipeline
 from .TasNetPipeline import TasNetPipeline
 from .Pipeline_Amortized import Pipeline_Amortized
 from .Pipeline import Pipeline
-from .VectorCopulaPipeline import VectorCopulaPipeline
 from .Dingo_NF_pipeline  import DINGO_pipeline
-__all__ = ["HierarchicalPipeline", "JointLikelihoodPipeline", "Pipeline_type","SingleLikelihoodPipeline","TasNetPipeline","Pipeline_Sampler","RunMode","Pipeline","Pipeline_Amortized","VectorCopulaPipeline","DINGO_pipeline"]
+__all__ = ["HierarchicalPipeline", "JointLikelihoodPipeline", "Pipeline_type","SingleLikelihoodPipeline","TasNetPipeline","Pipeline_Sampler","RunMode","Pipeline","Pipeline_Amortized","DINGO_pipeline"]
 

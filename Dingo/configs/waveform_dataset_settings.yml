@@ -36,7 +36,7 @@ intrinsic_prior:
   theta_jn_B: 0.0
   psi_B: 0.0
   phase_B: 0.0
-  delta_t_AB: 0.01
+  delta_t_AB: 0.0
 extrinsic_prior:
   luminosity_distance_A: 100.0
   dec_A: 0.0
@@ -51,5 +51,5 @@ extrinsic_prior:
   theta_jn_B: 0.0
   psi_B: 0.0
   phase_B: 0.0
-  delta_t_AB: 0.01
+  delta_t_AB: 0.0
 num_samples: 600

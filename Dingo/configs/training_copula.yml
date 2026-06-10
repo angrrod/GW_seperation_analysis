@@ -2,7 +2,7 @@ data:
   waveform_dataset_path: Dingo/data/waveform_dataset.hdf5
   extrinsic_prior:
     luminosity_distance_A: bilby.gw.prior.UniformSourceFrame(minimum=20000.0, maximum=150000.0,
-      name='luminosity_distance_A')
+      name=luminosity_distance)
     dec_A: bilby.core.prior.Cosine(name='dec_A')
     ra_A: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='ra_A')
     theta_jn_A: bilby.core.prior.Sine(name='theta_jn_A')
@@ -10,7 +10,7 @@ data:
     phase_A: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='phase_A')
     geocent_time_A: bilby.core.prior.Uniform(minimum=20.0, maximum=50.0, name='geocent_time_A')
     luminosity_distance_B: bilby.gw.prior.UniformSourceFrame(minimum=20000.0, maximum=150000.0,
-      name='luminosity_distance_B')
+      name=luminosity_distance)
     dec_B: bilby.core.prior.Cosine(name='dec_B')
     ra_B: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='ra_B')
     theta_jn_B: bilby.core.prior.Sine(name='theta_jn_B')

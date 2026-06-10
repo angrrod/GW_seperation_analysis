@@ -526,7 +526,7 @@ def compare_moments(samples: torch.Tensor,pipe,X:torch.tensor):
 
 def scenario(config:NF_type, suffix = "_NSF_INDEP",isIndependentCopula:bool = False,FreezeWeights:bool = False):
     #standardize the data
-    N             = 512
+    N             = 67108864
     known_cov     = getModelParams(isIndependentCopula)['cov']
     X             = sample_true_data(N, getTrueParams(),known_cov)
     nRestarts     = 1
@@ -536,7 +536,7 @@ def scenario(config:NF_type, suffix = "_NSF_INDEP",isIndependentCopula:bool = Fa
     # X          = (X - mu) / std
     
     #config
-    batch_size    = 128 #512 2048 128
+    batch_size    = 1048576 #512 2048 128
     num_particles = 5
     
     #debug options
@@ -612,12 +612,12 @@ def scenario(config:NF_type, suffix = "_NSF_INDEP",isIndependentCopula:bool = Fa
         plot_posterior_marginals(pipe,X)  
         
         #--- main part of the model of the model ---
-        Nsteps = 7000
+        Nsteps = 2000
         loss_list,diagnostics,_ = pipe.trainModel(Nsteps,100,run)
         tail_window = Nsteps//20
         tail_loss = np.median(loss_list[-tail_window:])
         tail_loss_list.append(tail_loss)
-        best_score = 10000000  #very high
+        best_score = np.inf 
         if tail_loss < best_score:
             best_score = tail_loss
             best_run = {
