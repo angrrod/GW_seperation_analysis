@@ -122,8 +122,8 @@ class DINGO_pipeline(Pipeline_Amortized):
         INTRINSIC_BASE_PARAMS = {
             "mass_1",
             "mass_2",
-            "chirp_mass", 
-            "mass_ratio",
+            # "chirp_mass", 
+            # "mass_ratio",
             "a_1", 
             "a_2",
             "tilt_1",
@@ -163,7 +163,7 @@ class DINGO_pipeline(Pipeline_Amortized):
         extrinsic_prior = {}
 
         # DINGO waveform datasets usually want component masses,
-        # not chirp_mass/mass_ratio.
+        # TODO:: not chirp_mass/mass_ratio.
         suffixes = ["_A","_B"]
         skip = set()
         for suffix in suffixes:
@@ -228,7 +228,6 @@ class DINGO_pipeline(Pipeline_Amortized):
         yml["dataset_settings"]["f_s"] = int(cfg.sampling_frequency)
         yml["dataset_settings"]["T"] = float(cfg.duration)
         yml["dataset_settings"]["time_psd"] = max(4 * float(cfg.duration), 1024)
-        #TODO: implement ET
         ce_psd = self._resolve_input_file(cfg.ASD_file_name_CE + "_PSD.txt")
         yml["dataset_settings"]["detectors"] = ["H1", "L1"]
         yml["asds"] = {
@@ -244,10 +243,10 @@ class DINGO_pipeline(Pipeline_Amortized):
         cfg = self.scenario.config
         
         training_name = "training_copula.yml"# "training.yml"
-
+        
         train_yml = read_yaml(get_dingo_dir_yamls() / training_name)
         waveform_yml = read_yaml(get_dingo_dir_yamls() / "waveform_dataset_settings.yml")
-
+        
         train_yml.setdefault("data", {})
         train_yml["data"].setdefault("ref_time", 0.0)
         # Required by prepare_training_new()
@@ -325,7 +324,6 @@ class DINGO_pipeline(Pipeline_Amortized):
             num_signals=num_signals,
         )
 
-    #TODO: fix this EINSTEIN set up
     def generate_asd_dataset(self):
         """
         Create a DINGO-compatible ASDDataset HDF5 from a fixed custom PSD/ASD file.
