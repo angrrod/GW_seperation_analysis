@@ -20,6 +20,9 @@ import torch
 import pyro.distributions as dist
 from torch.distributions import constraints
 from dingo.gw.dataset.generate_dataset import _generate_dataset_main
+# from dingo.core.posterior_models.vector_copula_Model import vector_copula_Model
+from dingo.core.posterior_models.vector_copula_Model import CopulaNormalizingFlowModel
+from dingo.gw.inference.gw_samplers import GWSampler
 
 def read_yaml(path: Path) -> dict:
     with open(path, "r") as f:
@@ -33,9 +36,47 @@ def read_yaml(path: Path) -> dict:
 def write_yaml(path: Path, obj: dict):
     with open(path, "w") as f:
         yaml.safe_dump(obj, f, sort_keys=False)
-        
+
+def masses_to_chirp_mass_and_q(mass_1, mass_2):
+    m1 = np.maximum(mass_1, mass_2)
+    m2 = np.minimum(mass_1, mass_2)
+
+    chirp_mass = (m1 * m2) ** (3.0 / 5.0) / (m1 + m2) ** (1.0 / 5.0)
+    mass_ratio = m2 / m1
+
+    return chirp_mass, mass_ratio
+
+def columns_are_positive(columns:list[str],samples):
+    for column in columns:
+        if column in samples.columns:
+            bad = samples[column] <= 0
+            if bad.any():
+                raise ValueError(
+                    f"{column} must be strictly positive, but found "
+                    f"{bad.sum()} / {len(samples)} non-positive samples. "
+                    f"min={samples['delta_t_AB'].min()}"
+                )
+
+def add_derived_params_to_df(samples):
+    for suffix in ["_A", "_B"]:
+        m1_key = f"mass_1{suffix}"
+        m2_key = f"mass_2{suffix}"
+
+        if {m1_key, m2_key}.issubset(samples.columns):
+            if (samples[[m1_key, m2_key]] <= 0).any().any():
+                print(f"Warning: non-positive masses found for {suffix}; chirp/q may be invalid.")
+
+            chirp, q = masses_to_chirp_mass_and_q(
+                samples[m1_key].to_numpy(),
+                samples[m2_key].to_numpy(),
+            )
+
+            samples[f"chirp_mass{suffix}"] = chirp
+            samples[f"mass_ratio{suffix}"] = q
+    return samples
+
 class DINGO_pipeline(Pipeline_Amortized):
-    def __init__(self, logger, scenario:GWScenario):
+    def __init__(self, logger, scenario:GWScenario, generateData:bool):
         super().__init__(logger, scenario)
         self.MethodConfig   = DynestyConfig()  #temporary dummy method
         # set up YML's so that scenario is correctly translated to bilby
@@ -43,13 +84,14 @@ class DINGO_pipeline(Pipeline_Amortized):
         self.train_dir = get_dingo_dir_data() / "training_run"
         os.makedirs(self.train_dir, exist_ok=True)
         self.export_configs()
-        
+        'Dingo/data/training_run/history.txt'
         with open(self.config_paths["train"], "r") as f:
             self.train_settings = yaml.safe_load(f)
 
         self.local_settings = self.train_settings.pop("local") #.pop("local")
         
-        self.set_up() 
+        if generateData:
+            self.set_up() 
         pm,wfd     = self.prerp_train()
         self.model = pm
         self.wfd   = wfd
@@ -287,6 +329,13 @@ class DINGO_pipeline(Pipeline_Amortized):
         write_yaml(dst, train_yml)
         return dst
 
+    def _constrain_sample(self,samples,pos_columns):
+        mask = (samples[pos_columns] > 0).all(axis=1)
+        print(f"Kept {mask.sum()} / {len(mask)} samples; removed {(~mask).sum()} invalid samples")
+
+        samples = samples.loc[mask].copy()
+        return samples
+
     def export_configs(self):
         #combines the bilby backend to make it compatible with DINGO, reads the existing config and writes to yml files used in DINGO, to make them consistent
         self.config_paths = {
@@ -409,7 +458,9 @@ class DINGO_pipeline(Pipeline_Amortized):
         self.logger.info(f"$$$ wrote custom DINGO ASD dataset: {out_file}")
 
     def set_up(self):        
-        #generate data
+        """
+        generate the data
+        """
         # if not self.artifact_paths["waveform_dataset"].exists():
         self.generate_waveform_dataset()
             
@@ -429,6 +480,10 @@ class DINGO_pipeline(Pipeline_Amortized):
         return pm,wfd
 
     def train(self,start_from_checkpoint = False):
+        path = self.train_dir / 'history.txt'
+        if path.exists():
+            path.unlink()
+        
         if start_from_checkpoint:
             self.load_model()
 
@@ -441,32 +496,70 @@ class DINGO_pipeline(Pipeline_Amortized):
             )
         return complete
 
-    def _torch_load(self, path: Path):
+    def build_context_from_initialized_scenario(
+        self,
+    ):
         """
-        Wrapper for torch.load that is robust across PyTorch versions.
-        Newer PyTorch versions may use weights_only by default.
-        """
-        device = self.local_settings.get("device", "cpu")
-        kwargs = {"map_location": torch.device(device)}
+        Build DINGO sampler context from an already initialized GWScenario.
 
-        try:
-            return torch.load(path, **kwargs, weights_only=False)
-        except TypeError:
-            return torch.load(path, **kwargs)
+        Assumes scenario.setUpScenario() has already been called in main.
+        """
+
+        ifos_by_name = {ifo.name: ifo for ifo in self.scenario.ifos}
+        waveform = {}
+        asds = {}
+        
+        asd_settings = read_yaml(self.config_paths["asd"])
+        detectors = asd_settings["dataset_settings"]["detectors"]
+
+        for name in detectors:
+            ifo = ifos_by_name[name]
+            waveform[name] = ifo.strain_data.frequency_domain_strain
+            freqs = ifo.strain_data.frequency_array
+            psd = ifo.power_spectral_density.get_power_spectral_density_array(freqs)
+            asds[name] = np.sqrt(psd)
+
+        return {
+            "waveform": waveform,
+            "asds": asds,
+            "parameters" : self.scenario.injct_params_waves[0]
+        }
 
     def load_model(self):
         latest_model_path =  self.train_dir / "model_latest.pt"
-        chkpt_latest = self._torch_load(latest_model_path)
-        self.model.network.load_state_dict(chkpt_latest, strict=False)
+        device            = self.local_settings.get("device", "cpu")
+        
+        self.model = CopulaNormalizingFlowModel(
+            device             = device,
+            model_filename     = str(latest_model_path),
+            load_training_info = False,
+        )
+        self.logger.info(f"$$$ loaded DINGO vector_copula_Model: {latest_model_path}")
+        return self.model
 
-    def build_dingo_model(self):
-        raise NotImplementedError
+    def infer(self,num_samples:int):
+        current_model   = self.load_model()
+        sampler         = GWSampler(model = current_model)
+        sampler.context = self.build_context_from_initialized_scenario()
+        sampler.run_sampler(num_samples=num_samples, batch_size=1_000, isJoint = True)
+        samples = sampler.samples
 
-    def infer(self):
-        raise NotImplementedError
-    
+        #post-process
+        if {"geocent_time_A", "delta_t_AB"}.issubset(samples.columns):
+            samples["geocent_time_B"] = samples["geocent_time_A"] + samples["delta_t_AB"]
+        #tests: Decide what to do with these
+        pos_columns = ["mass_1_A","mass_1_B","mass_2_A","mass_2_B","delta_t_AB"]
+        samples = self._constrain_sample(samples,pos_columns)
+        samples = add_derived_params_to_df(samples)
+        
+        if samples.isna().any().any():
+            raise ValueError("NaNs found in DINGO posterior samples.")
+
+        return samples
+
     def run(self):
         """
         High level function to be used for the general test pipeline
         """
         raise NotImplementedError
+

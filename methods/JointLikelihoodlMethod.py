@@ -13,7 +13,7 @@ class JointLikelihoodlMethod(Method):
     def getLikelihood(self,ifos_override):
         #adapt both prior and likelihood for joint modelling
         self.logger.info("$$$ get the joint likelihood signal")
-        waveform_parms = self.scenario.GetWaveFormParams()
+        waveform_parms = self.scenario.injct_params_waves
         ref_injection  = self.scenario.build_ref_injection(waveform_parms)
         
         #redundant code used to unsure uniformity with SingleLikelihood
@@ -24,10 +24,15 @@ class JointLikelihoodlMethod(Method):
         
         if not self.scenario.config.UseRelBinning:
             raise NotImplementedError("joint likelihood only implemented with Relative binning")
+        if self.scenario.config.UseRelBinning:
+            waveform_generator = self.wg_rel
+        else:
+            waveform_generator = self.scenario.wg
+        
         # waveform generator for relative binning likelihood model
         likelihood = OverlappingSignalsRelBinning(
             interferometers    = ifos,
-            waveform_generator = self.scenario.wg,
+            waveform_generator = waveform_generator,
             ref_injection      = ref_injection, # actual parameters in simulation, ML for actual data, this is the FUDICIAL waveform used in the RB scheme
             N_overlaps         = 2,
             priors             = self.prior,
@@ -41,13 +46,19 @@ class JointLikelihoodlMethod(Method):
             # wrapped likelihood, add constraint on the prior to force the likelihood
             p = parameters if parameters is not None else likelihood.parameters
             p = dict(p)
-            p["geocent_time_A"] = p["geocent_time_B"] + p["delta_t_AB"]
-
-            if parameters is None:
-                likelihood.parameters.update(p)
-                return _base_log_likelihood_ratio(parameters=None)
+            if "geocent_time_A" in p and "delta_t_AB" in p:
+                p["geocent_time_B"] = p["geocent_time_A"] - p["delta_t_AB"]
+            elif "geocent_time_B" in p and "delta_t_AB" in p:
+                p["geocent_time_A"] = p["geocent_time_B"] + p["delta_t_AB"]
             else:
-                return _base_log_likelihood_ratio(parameters=p)
+                raise KeyError(
+                    "Need either (geocent_time_A, delta_t_AB) or "
+                    "(geocent_time_B, delta_t_AB) to reconstruct the joint times."
+                )
+
+            likelihood.parameters.update(p)
+            return _base_log_likelihood_ratio()
+
         
         likelihood.log_likelihood_ratio = wrapped_log_likelihood_ratio
         return likelihood

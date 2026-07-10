@@ -7,9 +7,11 @@ class ScenarioConfig:
     reference_frequency: float = 20.0 #20
     duration: float            = 64.0 #64
     start_time:float           = 0.0
-    time_delta: float          = 10.0 #time between the 2 signals
+    time_delta: float          = 0.2 #time between the 2 signals
     ASD_file_name_ET: str      = "ET_D"
     ASD_file_name_CE: str      = "cosmic_explorer_strain"
     UseRelBinning: bool        = True 
-    ineject_random_sample:bool = True
-    generate_new_signal:bool   = False
+    ineject_random_sample:bool = False  # generate a random or fixed signal-> needed for randomly testing
+    generate_new_signal:bool   = True   # generate a new signal can be random or not,
+                                        # needed to update the stored params
+    scenarioId:str             = "test_correlation" #used for storing the PSD/noise strain

@@ -7,6 +7,7 @@ import os
 from Pipeline import Pipeline_type
 from setUpLoggerScenario import setUpLoggerScenario
 import pandas as pd
+import numpy as np
 
 def Main(useJoint = True):
     #build scenario
@@ -14,6 +15,12 @@ def Main(useJoint = True):
     scenario,logger,plot_dir,data_dir = setUpLoggerScenario(ScenConfig)
     data_dir = data_dir/ "results.hdf5"
     results = utils.exctractResults(data_dir,logger)
+    
+    parameter_name = 'luminosity_distance'#'mass_ratio' #dec
+    fig_cor = plot_joint_parameter_corner(posteriors = results['joint_likl']['posteriors'],parameter = parameter_name)
+    path = os.path.join(plot_dir, "correlation.png")
+    fig_cor.savefig(path, dpi=200)
+    
     # t1 = results['joint_likl']['posteriors']['waveFormA']['chirp_mass']
     # t2 = results['joint_likl']['posteriors']['waveFormA']['geocent_time']
     #modify the results
@@ -40,7 +47,7 @@ def Main(useJoint = True):
         # "ra",
         # "dec"
         ] #,"mass_ratio","luminosity_distance"
-    truths = scenario.GetWaveFormParams()
+    truths = scenario.prior.GetWaveFormParamsFixed()
     truths = [[d[k] for k in params if k in d] for d in truths]  #get params to be plotted in corner plot
     plotOverlap(params,results,truths,logger,plot_dir)
     
@@ -59,27 +66,28 @@ def plotOverlap(params,results,truths,logger,plot_dir):
     legend_labels  = []
     
     for pipeline in results:
-        res = results[pipeline].get('posteriors')
-        for waveform in res:
-            wave = res[waveform]
-            color = colors[color_idx % n_colors]
-            color_idx += 1            #separate the joint poisterior that ends with _A and _B in their respective posterior samples
-            label = f"{pipeline} – {waveform}"
-            
-            if pipeline == Pipeline_type.JOINT.code:
-                df_A = wave.copy()
-                df_A.rename(columns=params_A, inplace=True)
-                df_B = wave.copy()
-                df_B.rename(columns=params_B, inplace=True)
-                fig = utils.createCornerPlot(df_A[params].values,params,color,fig,truths[1])  #index doesn't matter as things get overlapped
-                fig = utils.createCornerPlot(df_B[params].values,params,color,fig,truths[0])
-            else:
-                #Single waveform
-                fig = utils.createCornerPlot(wave[params].values,params,color,fig,truths[0])
-            legend_handles.append(
-                Line2D([0], [0], color=color, lw=2)
-            )
-            legend_labels.append(label)
+        if pipeline != Pipeline_type.SINGLE.code:
+            res = results[pipeline].get('posteriors')
+            for waveform in res:
+                wave = res[waveform]
+                color = colors[color_idx % n_colors]
+                color_idx += 1            #separate the joint poisterior that ends with _A and _B in their respective posterior samples
+                label = f"{pipeline} – {waveform}"
+                
+                if pipeline == Pipeline_type.JOINT.code:
+                    df_A = wave.copy()
+                    df_A.rename(columns=params_A, inplace=True)
+                    df_B = wave.copy()
+                    df_B.rename(columns=params_B, inplace=True)
+                    fig = utils.createCornerPlot(df_A[params].values,params,color,fig,truths[1])  #index doesn't matter as things get overlapped
+                    fig = utils.createCornerPlot(df_B[params].values,params,color,fig,truths[0])
+                else:
+                    #Single waveform
+                    fig = utils.createCornerPlot(wave[params].values,params,color,fig,truths[0])
+                legend_handles.append(
+                    Line2D([0], [0], color=color, lw=2)
+                )
+                legend_labels.append(label)
 
     fig.legend(
         legend_handles,
@@ -93,7 +101,67 @@ def plotOverlap(params,results,truths,logger,plot_dir):
     fileName = "multiple waveforms"
     path = os.path.join(plot_dir, f"{fileName}.png")
     fig.savefig(path, dpi=200)
+
     
+def plot_joint_parameter_corner(
+    posteriors: dict,
+    parameter: str,
+    color: str = "C0",
+    fig=None,
+    truths=None,
+    waveform_a_key: str = "waveFormA",
+    waveform_b_key: str = "waveFormB",
+    strict_index_check: bool = False,
+):
+    """
+    Plot p(parameter_A, parameter_B) as a corner plot.
+
+    The pairing is row-wise:
+        sample i from waveFormA is paired with sample i from waveFormB.
+
+    This preserves the sample order from the stored posterior tables.
+    """
+
+    df_A = posteriors[waveform_a_key]
+    df_B = posteriors[waveform_b_key]
+
+    if parameter not in df_A.columns:
+        raise KeyError(f"{parameter!r} not found in {waveform_a_key}")
+
+    if parameter not in df_B.columns:
+        raise KeyError(f"{parameter!r} not found in {waveform_b_key}")
+
+    if len(df_A) != len(df_B):
+        raise ValueError(
+            f"Cannot make joint plot: {waveform_a_key} has {len(df_A)} samples, "
+            f"but {waveform_b_key} has {len(df_B)} samples."
+        )
+
+    if strict_index_check and not df_A.index.equals(df_B.index):
+        raise ValueError(
+            f"{waveform_a_key} and {waveform_b_key} do not have matching indices. "
+            "If row order is still meaningful, call with strict_index_check=False."
+        )
+
+    samples = np.column_stack(
+        [
+            df_A[parameter].to_numpy(),
+            df_B[parameter].to_numpy(),
+        ]
+    )
+
+    finite_mask = np.isfinite(samples).all(axis=1)
+    samples = samples[finite_mask]
+
+    labels = [f"{parameter}_A", f"{parameter}_B"]
+
+    return utils.createCornerPlot(
+        samps=samples,
+        params=labels,
+        color=color,
+        fig=fig,
+        truths=truths,
+    )    
 ###########################
 ###   Run actual Code   ###
 ###########################

@@ -24,8 +24,8 @@ def setUpLoggerScenario(ScenConfig):
     logger = bilby.core.utils.logger
     logger.info("$$$ start_run")
     
-    scenarioId = 1  #used to load several scenario's
-    scenario = GWScenario(logger, scenarioId, ScenConfig)
+    scenarioId = ScenConfig.scenarioId  #used to load several scenario's
+    scenario   = GWScenario(logger, scenarioId, ScenConfig)
     scenario.setUpScenario()
     
     #test ifo's

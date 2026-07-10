@@ -148,7 +148,7 @@ class Method(ABC):
     def getResultPath(self):
         outdir = self.getSampleOutdir(self.nameExtra)
         return outdir / f"{self.pipeline_type_code}_result.json"
-    
+
     def _getRBWaveForm(self):
         """
             wavform generator tailored for jointRB 

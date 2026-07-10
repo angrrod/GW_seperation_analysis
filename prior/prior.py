@@ -45,7 +45,7 @@ class prior():
     def fixPriors(self,prior,fixed_priors,waveformIdx,useDeltaFunction):
         waveFormParams = self.GetWaveFormParamsFixed()
         for k in fixed_priors:
-            if k in prior:
+            if k in prior: 
                 value = waveFormParams[waveformIdx].get(k)
                 if useDeltaFunction:
                     self.logger.info(f"$$$ making prior delta {k}")

@@ -27,66 +27,44 @@ data:
   inference_parameters:
   - mass_1_A
   - mass_2_A
-  - a_1_A
-  - a_2_A
-  - tilt_1_A
-  - tilt_2_A
-  - phi_12_A
-  - phi_jl_A
   - luminosity_distance_A
-  - dec_A
-  - ra_A
-  - theta_jn_A
-  - psi_A
-  - phase_A
   - geocent_time_A
   - mass_1_B
   - mass_2_B
-  - a_1_B
-  - a_2_B
-  - tilt_1_B
-  - tilt_2_B
-  - phi_12_B
-  - phi_jl_B
   - luminosity_distance_B
-  - dec_B
-  - ra_B
-  - theta_jn_B
-  - psi_B
-  - phase_B
   - delta_t_AB
   context_parameters: []
   ref_time: 0.0
 model:
   posterior_model_type: copula_normalizing_flow
   posterior_kwargs:
-    input_dim: 30
     context_dim: 128
     block_dims:
-    - 15
-    - 15
-    flow_1:
-      num_flow_steps: 5
-      base_transform_kwargs:
-        hidden_dim: 128
-        num_transform_blocks: 5
-        activation: elu
-        dropout_probability: 0.0
-        batch_norm: true
-        num_bins: 8
-        base_transform_type: rq-coupling
-    flow_2:
-      num_flow_steps: 5
-      base_transform_kwargs:
-        hidden_dim: 128
-        num_transform_blocks: 5
-        activation: elu
-        dropout_probability: 0.0
-        batch_norm: true
-        num_bins: 8
-        base_transform_type: rq-coupling
+    - 4
+    - 4
+    flows:
+      flow_1:
+        num_flow_steps: 5
+        base_transform_kwargs:
+          hidden_dim: 128
+          num_transform_blocks: 5
+          activation: elu
+          dropout_probability: 0.0
+          batch_norm: true
+          num_bins: 8
+          base_transform_type: rq-coupling
+      flow_2:
+        num_flow_steps: 5
+        base_transform_kwargs:
+          hidden_dim: 128
+          num_transform_blocks: 5
+          activation: elu
+          dropout_probability: 0.0
+          batch_norm: true
+          num_bins: 8
+          base_transform_type: rq-coupling
     CopulaKwargs:
-      p: 1
+      P: 7
       hidden_dims:
       - 64
       - 64
@@ -111,7 +89,7 @@ training:
     freeze_rb_layer: true
     optimizer:
       type: adam
-      lr: 5.0e-05
+      lr: 0.0001
     scheduler:
       type: cosine
       T_max: 300
@@ -122,16 +100,19 @@ training:
     freeze_rb_layer: false
     optimizer:
       type: adam
-      lr: 1.0e-05
+      lr: 2.0e-05
     scheduler:
       type: cosine
       T_max: 150
     batch_size: 4096
 local:
   device: cpu
-  num_workers: 4
+  num_workers: 8
   runtime_limits:
-    max_time_per_run: 3600000
-    max_epochs_per_run: 500
+    max_time_per_run: 36000000
+    max_epochs_per_run: 50
   checkpoint_epochs: 10
   leave_waveforms_on_disk: true
+  wandb:
+    project: dingo-copula
+    group: gaussian-mean-debug

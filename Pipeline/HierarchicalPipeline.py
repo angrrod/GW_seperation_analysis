@@ -20,7 +20,7 @@ class HierarchicalPipeline(Pipeline_Sampler):
         self.logger.info("$$$ generate Samples for hyrarchical model")
         resultsSampleA        = self.singleSampler1.run(runMode,ifos_override = None)
         # MLPosteriorA          = getMaximumLikelihood(resultsSampleA)
-        MLPosteriorA                = pd.Series(self.scenario.GetWaveFormParams()[0])
+        MLPosteriorA                = pd.Series(self.scenario.injct_params_waves[0])
         #TODO: remove
         # MLPosteriorA['luminosity_distance'] = 100
         # MLPosteriorA['geocent_time']        = 1

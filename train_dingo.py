@@ -7,11 +7,10 @@ from setUpLoggerScenario import setUpLoggerScenario
 ##############################################
 
 def Main():
-    ScenConfig          = ScenarioConfig()
-    scenario,logger,_,_ = setUpLoggerScenario(ScenConfig)
-    DP = DINGO_pipeline(logger,scenario)
-
-    DP.train(start_from_checkpoint = True)
+    # ScenConfig          = ScenarioConfig()
+    # scenario,logger,_,_ = setUpLoggerScenario(ScenConfig)
+    # DP = DINGO_pipeline(logger,scenario)
+    # DP.train(start_from_checkpoint = True)
 
 if __name__ == "__main__":
     Main()
