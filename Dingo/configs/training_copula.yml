@@ -1,23 +1,20 @@
 data:
   waveform_dataset_path: Dingo/data/waveform_dataset.hdf5
   extrinsic_prior:
-    luminosity_distance_A: bilby.gw.prior.UniformSourceFrame(minimum=20000.0, maximum=150000.0,
-      name=luminosity_distance)
-    dec_A: bilby.core.prior.Cosine(name='dec_A')
-    ra_A: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='ra_A')
-    theta_jn_A: bilby.core.prior.Sine(name='theta_jn_A')
-    psi_A: bilby.core.prior.Uniform(minimum=0.0, maximum=3.141592653589793, name='psi_A')
-    phase_A: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='phase_A')
-    geocent_time_A: bilby.core.prior.Uniform(minimum=20.0, maximum=50.0, name='geocent_time_A')
-    luminosity_distance_B: bilby.gw.prior.UniformSourceFrame(minimum=20000.0, maximum=150000.0,
-      name=luminosity_distance)
-    dec_B: bilby.core.prior.Cosine(name='dec_B')
-    ra_B: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='ra_B')
-    theta_jn_B: bilby.core.prior.Sine(name='theta_jn_B')
-    psi_B: bilby.core.prior.Uniform(minimum=0.0, maximum=3.141592653589793, name='psi_B')
-    phase_B: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='phase_B')
-    delta_t_AB: bilby.core.prior.Uniform(minimum=0.0001, maximum=10.0, name='delta_t_AB')
-  train_fraction: 0.95
+    luminosity_distance_A: bilby.core.prior.DeltaFunction(peak=50000.0, name='luminosity_distance_A')
+    dec_A: bilby.core.prior.DeltaFunction(peak=0.0, name='dec_A')
+    ra_A: bilby.core.prior.DeltaFunction(peak=0.0, name='ra_A')
+    theta_jn_A: bilby.core.prior.DeltaFunction(peak=1.0, name='theta_jn_A')
+    psi_A: bilby.core.prior.DeltaFunction(peak=0.0, name='psi_A')
+    phase_A: bilby.core.prior.DeltaFunction(peak=0.0, name='phase_A')
+    geocent_time_A: bilby.core.prior.DeltaFunction(peak=30.0, name='geocent_time_A')
+    luminosity_distance_B: bilby.core.prior.DeltaFunction(peak=60000.0, name='luminosity_distance_B')
+    dec_B: bilby.core.prior.DeltaFunction(peak=0.3, name='dec_B')
+    ra_B: bilby.core.prior.DeltaFunction(peak=1.0, name='ra_B')
+    theta_jn_B: bilby.core.prior.DeltaFunction(peak=1.2, name='theta_jn_B')
+    psi_B: bilby.core.prior.DeltaFunction(peak=0.5, name='psi_B')
+    phase_B: bilby.core.prior.DeltaFunction(peak=1.0, name='phase_B')
+    delta_t_AB: bilby.core.prior.DeltaFunction(peak=1.0, name='delta_t_AB')
   domain_update:
     f_min: 10.0
     f_max: 1024.0
@@ -27,44 +24,41 @@ data:
   inference_parameters:
   - mass_1_A
   - mass_2_A
-  - luminosity_distance_A
-  - geocent_time_A
   - mass_1_B
   - mass_2_B
-  - luminosity_distance_B
-  - delta_t_AB
   context_parameters: []
   ref_time: 0.0
+  train_fraction: 0.95
 model:
   posterior_model_type: copula_normalizing_flow
   posterior_kwargs:
     context_dim: 128
     block_dims:
-    - 4
-    - 4
+    - 2
+    - 2
     flows:
       flow_1:
-        num_flow_steps: 5
+        num_flow_steps: 4
         base_transform_kwargs:
-          hidden_dim: 128
-          num_transform_blocks: 5
+          hidden_dim: 64
+          num_transform_blocks: 4
           activation: elu
           dropout_probability: 0.0
           batch_norm: true
-          num_bins: 8
+          num_bins: 16
           base_transform_type: rq-coupling
       flow_2:
-        num_flow_steps: 5
+        num_flow_steps: 4
         base_transform_kwargs:
-          hidden_dim: 128
-          num_transform_blocks: 5
+          hidden_dim: 64
+          num_transform_blocks: 4
           activation: elu
           dropout_probability: 0.0
           batch_norm: true
-          num_bins: 8
+          num_bins: 16
           base_transform_type: rq-coupling
     CopulaKwargs:
-      P: 7
+      P: 3
       hidden_dims:
       - 64
       - 64
@@ -84,7 +78,7 @@ model:
       size: 64
 training:
   stage_0:
-    epochs: 300
+    epochs: 500
     asd_dataset_path: Dingo/data/asd_dataset.hdf5
     freeze_rb_layer: true
     optimizer:
@@ -92,10 +86,10 @@ training:
       lr: 0.0001
     scheduler:
       type: cosine
-      T_max: 300
+      T_max: 500
     batch_size: 4096
   stage_1:
-    epochs: 150
+    epochs: 500
     asd_dataset_path: Dingo/data/asd_dataset.hdf5
     freeze_rb_layer: false
     optimizer:
@@ -103,15 +97,15 @@ training:
       lr: 2.0e-05
     scheduler:
       type: cosine
-      T_max: 150
+      T_max: 500
     batch_size: 4096
 local:
   device: cpu
-  num_workers: 8
+  num_workers: 16
   runtime_limits:
     max_time_per_run: 36000000
-    max_epochs_per_run: 50
-  checkpoint_epochs: 10
+    max_epochs_per_run: 5000
+  checkpoint_epochs: 100
   leave_waveforms_on_disk: true
   wandb:
     project: dingo-copula

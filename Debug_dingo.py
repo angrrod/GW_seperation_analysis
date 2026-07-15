@@ -1,4 +1,5 @@
-from config import ScenarioConfig
+
+from config.ScenarioConfig import ScenarioConfig
 from Pipeline import DINGO_pipeline
 from setUpLoggerScenario import setUpLoggerScenario
 import corner
@@ -6,6 +7,9 @@ import matplotlib.pyplot as plt
 from dingo.core.posterior_models.normalizing_flow import NormalizingFlowPosteriorModel
 from dingo.core.posterior_models.base_model import BasePosteriorModel
 from pathlib import Path
+import os
+
+
 
 ###########################
 ###   Run Debug Code   ###
@@ -14,8 +18,8 @@ from pathlib import Path
 TRAIN         = True
 INFER         = True
 PLOT          = True
-GENERATE_DATA = False
-NUM_SAMPLES   = 10_000
+GENERATE_DATA = True
+NUM_SAMPLES   = 1000
 
 def make_corner_plot(samples, truth_parameters, out_file):
     """
@@ -39,12 +43,30 @@ def make_corner_plot(samples, truth_parameters, out_file):
         truth_parameters[name]
         for name in parameter_names
     ]
-
+    
+    # OLD, for full analysis
+    # fig = corner.corner(
+    #     samples[parameter_names].to_numpy(),
+    #     labels=parameter_names,
+    #     truths=truths,
+    #     show_titles=True,
+    # )
+    # TEMP
+    plot_columns = [
+        "mass_1_A",
+        "mass_2_A",
+        "mass_1_B",
+        "mass_2_B",
+    ]
     fig = corner.corner(
-        samples[parameter_names].to_numpy(),
-        labels=parameter_names,
-        truths=truths,
-        show_titles=True,
+        samples[plot_columns],
+        labels=plot_columns,
+        truths=[
+            truth_parameters["mass_1_A"],
+            truth_parameters["mass_2_A"],
+            truth_parameters["mass_1_B"],
+            truth_parameters["mass_2_B"],
+        ],
     )
 
     out_file = Path(out_file)
@@ -90,6 +112,17 @@ def Main():
             )
 
             logger.info(f"$$$ wrote corner plot to {corner_path}")
+            
+
 
 if __name__ == "__main__":
+    # project_dir = Path(os.environ["VSC_DATA"]) / "GW_separation"
+    # for directory in (
+    #     project_dir / "Dingo" / "configs",
+    #     project_dir / "Dingo" / "data",
+    #     project_dir / "Dingo" / "logs",
+    # ):
+    #     directory.mkdir(parents=True, exist_ok=True)
+        
     Main()
+    print("End")

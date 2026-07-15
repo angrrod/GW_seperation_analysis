@@ -47,6 +47,7 @@ def add_derived_times(posteriors):
             continue
 
         # Case 1: joint posterior table still has suffixed columns
+        # geocent_time_B = geocent_time_A - delta_t_AB
         if {"geocent_time_B", "delta_t_AB"}.issubset(df.columns):
             df["geocent_time_A"] = df["geocent_time_B"] + df["delta_t_AB"]
 

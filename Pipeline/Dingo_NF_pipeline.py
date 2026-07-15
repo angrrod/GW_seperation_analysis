@@ -297,8 +297,9 @@ class DINGO_pipeline(Pipeline_Amortized):
         )
 
         # Required by build_svd_for_embedding_network()
-        _, extrinsic_prior = self._export_prior_yaml_blocks()
-        train_yml["data"]["extrinsic_prior"] = extrinsic_prior
+        # TODO: fix this
+        # _, extrinsic_prior = self._export_prior_yaml_blocks()
+        # train_yml["data"]["extrinsic_prior"] = extrinsic_prior
 
         # Usually useful / expected in DINGO train settings
         train_yml["data"].setdefault("train_fraction", 0.95)
@@ -381,7 +382,7 @@ class DINGO_pipeline(Pipeline_Amortized):
         It simply packages the custom design curve into the ASDDataset format expected
         by DINGO training.
         """
-
+        #scenario config
         cfg = self.scenario.config
 
         out_file = self.artifact_paths["asd_dataset"]
