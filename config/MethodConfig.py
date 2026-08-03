@@ -25,7 +25,7 @@ class BaseSamplerConfig:
     # sampler-agnostic behaviour controls
     restrict_prior: bool   = False  #should be kept at False, doesn't work with TasNet/hierarchical pipeline as they need te have a different prior to allow for a support there
     restriction_str: float = 0.5
-    use_deltas: bool       = False
+    use_deltas: bool       = True
     
 @dataclass(frozen=True)
 class DynestyConfig(BaseSamplerConfig):

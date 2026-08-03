@@ -78,6 +78,7 @@ class GWScenario:
         #inject N waves
         self.logger.info("$$$ injecting " + str(len(self.injct_params_waves)) + " waves")
         for inject_params in self.injct_params_waves:
+            self.logger.info(f"$$$ inject_params: {inject_params}")
             self.ifos.inject_signal(
                 waveform_generator=self.wg,
                 parameters=inject_params

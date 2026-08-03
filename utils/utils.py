@@ -66,6 +66,72 @@ def add_derived_times(posteriors):
                 dfA["geocent_time"] = dfB["geocent_time"].to_numpy() + dfA["delta_t_AB"].to_numpy()
     return posteriors
 
+def join_waveform_posteriors(
+    results: dict,
+    method_name: str = "joint_likl",
+) -> pd.DataFrame:
+    """
+    Join the waveform-A and waveform-B posterior DataFrames.
+
+    Expected structure
+    ------------------
+    results[method_name]["posteriors"]["waveFormA"]
+    results[method_name]["posteriors"]["waveFormB"]
+
+    Returns
+    -------
+    pd.DataFrame
+        Joint posterior with columns suffixed by "_A" and "_B".
+    """
+    try:
+        posteriors = results[method_name]["posteriors"]
+        posterior_A = posteriors["waveFormA"]
+        posterior_B = posteriors["waveFormB"]
+    except KeyError as error:
+        raise KeyError(
+            "Expected the structure "
+            f"results['{method_name}']['posteriors']"
+            "['waveFormA'/'waveFormB']."
+        ) from error
+
+    if not isinstance(posterior_A, pd.DataFrame):
+        raise TypeError(
+            "waveFormA must be a pandas DataFrame, "
+            f"got {type(posterior_A)}."
+        )
+
+    if not isinstance(posterior_B, pd.DataFrame):
+        raise TypeError(
+            "waveFormB must be a pandas DataFrame, "
+            f"got {type(posterior_B)}."
+        )
+
+    if len(posterior_A) != len(posterior_B):
+        raise ValueError(
+            "waveFormA and waveFormB must contain the same number "
+            f"of paired samples, but got {len(posterior_A)} and "
+            f"{len(posterior_B)}."
+        )
+
+    posterior_A = (
+        posterior_A
+        .reset_index(drop=True)
+        .add_suffix("_A")
+    )
+
+    posterior_B = (
+        posterior_B
+        .reset_index(drop=True)
+        .add_suffix("_B")
+    )
+
+    joint_posterior = pd.concat(
+        [posterior_A, posterior_B],
+        axis=1,
+    )
+
+    return joint_posterior
+
 def readMethodPosteriorInfo(store, method_name,logger):
     logger.info("$$$ read method info")
     posteriors  = {}

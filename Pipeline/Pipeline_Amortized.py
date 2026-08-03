@@ -20,7 +20,11 @@ class Pipeline_Amortized(Pipeline):
     @abstractmethod
     def load_model(self):
         raise NotImplementedError
-
+    
     @abstractmethod
     def infer(self):
+        raise NotImplementedError
+    
+    @abstractmethod
+    def infer_from_strain(self):
         raise NotImplementedError

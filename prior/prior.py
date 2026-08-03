@@ -32,7 +32,24 @@ class prior():
             latex_label='$d_L$',
             unit='Mpc'
         )
-        fixed_priors   = ["geocent_time"]# "chirp_mass", ,"mass_ratio","luminosity_distance"
+        # fixed_priors   = ["geocent_time"]# "chirp_mass", ,"mass_ratio","luminosity_distance"
+        fixed_priors = [
+            # Spins and spin orientations: source A
+            "a_1",
+            "a_2",
+            "tilt_1",
+            "tilt_2",
+            "phi_12",
+            "phi_jl",
+            "luminosity_distance",
+            "dec",
+            "ra",
+            "theta_jn",
+            "psi",
+            "phase",
+            "geocent_time",
+            "delta_t_AB",
+        ]
         prior = self.fixPriors(prior,fixed_priors,waveformIdx,self.MethodConfig.use_deltas)
         
         #fix priors for waveform

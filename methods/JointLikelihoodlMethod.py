@@ -66,8 +66,12 @@ class JointLikelihoodlMethod(Method):
     def updateResults(self,result,likelihood = None):
         self.logger.info("$$$ split waveforms for result object")
         posterior    = result.posterior
-        resultA      = posterior.loc[:, posterior.columns.str.endswith("_A")]
-        resultB      = posterior.loc[:, posterior.columns.str.endswith("_B")]
+        posterior["geocent_time_B"] = (
+            posterior["geocent_time_A"]
+            - posterior["delta_t_AB"]
+        )
+        resultA      = posterior.loc[:, posterior.columns.str.endswith("_A")].copy()
+        resultB      = posterior.loc[:, posterior.columns.str.endswith("_B")].copy()
         resultA      = resultA.rename(columns=lambda c: c[:-2])
         resultB      = resultB.rename(columns=lambda c: c[:-2])
         return resultA,resultB

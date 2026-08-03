@@ -4,25 +4,33 @@ domain:
   f_max: 1024.0
   delta_f: 0.015625
 waveform_generator:
-  approximant: IMRPhenomXPHM
+  approximant: TaylorF2
   f_ref: 20.0
 intrinsic_prior:
-  mass_1_A: bilby.core.prior.Uniform(minimum=5.0, maximum=40.0, name='mass_1')
-  mass_2_A: bilby.core.prior.Uniform(minimum=4.0, maximum=30.0, name='mass_2')
-  mass_1_B: bilby.core.prior.Uniform(minimum=5.0, maximum=40.0, name='mass_1')
-  mass_2_B: bilby.core.prior.Uniform(minimum=4.0, maximum=30.0, name='mass_2')
-  a_1_A: bilby.core.prior.Uniform(minimum=0.0, maximum=0.99, name='a_1_A')
-  a_2_A: bilby.core.prior.Uniform(minimum=0.0, maximum=0.99, name='a_2_A')
-  tilt_1_A: bilby.core.prior.Sine(name='tilt_1_A')
-  tilt_2_A: bilby.core.prior.Sine(name='tilt_2_A')
-  phi_12_A: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='phi_12_A')
-  phi_jl_A: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='phi_jl_A')
-  a_1_B: bilby.core.prior.Uniform(minimum=0.0, maximum=0.99, name='a_1_B')
-  a_2_B: bilby.core.prior.Uniform(minimum=0.0, maximum=0.99, name='a_2_B')
-  tilt_1_B: bilby.core.prior.Sine(name='tilt_1_B')
-  tilt_2_B: bilby.core.prior.Sine(name='tilt_2_B')
-  phi_12_B: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='phi_12_B')
-  phi_jl_B: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='phi_jl_B')
+  mass_1_A: bilby.core.prior.Constraint(minimum=5.0, maximum=40.0, name='mass_1_A')
+  mass_2_A: bilby.core.prior.Constraint(minimum=4.0, maximum=30.0, name='mass_2_A')
+  chirp_mass_A: bilby.gw.prior.UniformInComponentsChirpMass(minimum=3.8884, maximum=30.0947,
+    name='chirp_mass_A')
+  mass_ratio_A: bilby.gw.prior.UniformInComponentsMassRatio(minimum=0.1, maximum=1.0,
+    name='mass_ratio_A')
+  mass_1_B: bilby.core.prior.Constraint(minimum=5.0, maximum=40.0, name='mass_1_B')
+  mass_2_B: bilby.core.prior.Constraint(minimum=4.0, maximum=30.0, name='mass_2_B')
+  chirp_mass_B: bilby.gw.prior.UniformInComponentsChirpMass(minimum=3.8884, maximum=30.0947,
+    name='chirp_mass_B')
+  mass_ratio_B: bilby.gw.prior.UniformInComponentsMassRatio(minimum=0.1, maximum=1.0,
+    name='mass_ratio_B')
+  a_1_A: bilby.core.prior.DeltaFunction(peak=0.0, name='a_1_A')
+  a_2_A: bilby.core.prior.DeltaFunction(peak=0.0, name='a_2_A')
+  tilt_1_A: bilby.core.prior.DeltaFunction(peak=0.0, name='tilt_1_A')
+  tilt_2_A: bilby.core.prior.DeltaFunction(peak=0.0, name='tilt_2_A')
+  phi_12_A: bilby.core.prior.DeltaFunction(peak=0.0, name='phi_12_A')
+  phi_jl_A: bilby.core.prior.DeltaFunction(peak=0.0, name='phi_jl_A')
+  a_1_B: bilby.core.prior.DeltaFunction(peak=0.0, name='a_1_B')
+  a_2_B: bilby.core.prior.DeltaFunction(peak=0.0, name='a_2_B')
+  tilt_1_B: bilby.core.prior.DeltaFunction(peak=0.0, name='tilt_1_B')
+  tilt_2_B: bilby.core.prior.DeltaFunction(peak=0.0, name='tilt_2_B')
+  phi_12_B: bilby.core.prior.DeltaFunction(peak=0.0, name='phi_12_B')
+  phi_jl_B: bilby.core.prior.DeltaFunction(peak=0.0, name='phi_jl_B')
   luminosity_distance_A: 100.0
   dec_A: 0.0
   ra_A: 0.0
@@ -52,4 +60,4 @@ extrinsic_prior:
   psi_B: 0.0
   phase_B: 0.0
   delta_t_AB: 0.0
-num_samples: 4000
+num_samples: 20000

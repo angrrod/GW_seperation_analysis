@@ -84,7 +84,6 @@ class DINGO_pipeline(Pipeline_Amortized):
         self.train_dir = get_dingo_dir_data() / "training_run"
         os.makedirs(self.train_dir, exist_ok=True)
         self.export_configs()
-        'Dingo/data/training_run/history.txt'
         with open(self.config_paths["train"], "r") as f:
             self.train_settings = yaml.safe_load(f)
 
@@ -123,7 +122,14 @@ class DINGO_pipeline(Pipeline_Amortized):
                 f"minimum={float(p.minimum)}, maximum={float(p.maximum)}, "
                 f"name='{name}')"
             )
-
+            
+        if cls == "DeltaFunction":
+            return (
+                f"bilby.core.prior.DeltaFunction("
+                f"peak={float(p.peak)}, "
+                f"name='{name}')"
+            )
+            
         if cls == "PowerLaw":
             return (
                 f"bilby.core.prior.PowerLaw("
@@ -164,8 +170,8 @@ class DINGO_pipeline(Pipeline_Amortized):
         INTRINSIC_BASE_PARAMS = {
             "mass_1",
             "mass_2",
-            # "chirp_mass", 
-            # "mass_ratio",
+            "mass_ratio",
+            "chirp_mass",
             "a_1", 
             "a_2",
             "tilt_1",
@@ -205,20 +211,26 @@ class DINGO_pipeline(Pipeline_Amortized):
         extrinsic_prior = {}
 
         # DINGO waveform datasets usually want component masses,
-        # TODO:: not chirp_mass/mass_ratio.
         suffixes = ["_A","_B"]
         skip = set()
         for suffix in suffixes:
             intrinsic_prior[f"mass_1{suffix}"] = (
-                "bilby.core.prior.Uniform("
-                "minimum=5.0, maximum=40.0, name='mass_1')"
+                "bilby.core.prior.Constraint("
+                f"minimum=5.0, maximum=40.0, name='mass_1{suffix}')"
             )
             intrinsic_prior[f"mass_2{suffix}"] = (
-                "bilby.core.prior.Uniform("
-                "minimum=4.0, maximum=30.0, name='mass_2')"
+                "bilby.core.prior.Constraint("
+                f"minimum=4.0, maximum=30.0, name='mass_2{suffix}')"
             )
-
-            skip.update([f"chirp_mass{suffix}", f"mass_ratio{suffix}", f"mass_1{suffix}", f"mass_2{suffix}"])
+            intrinsic_prior[f"chirp_mass{suffix}"] = (  #mass_ratio
+                "bilby.gw.prior.UniformInComponentsChirpMass("
+                f"minimum=3.8884, maximum=30.0947, name='chirp_mass{suffix}')"
+            )
+            intrinsic_prior[f"mass_ratio{suffix}"] = ( 
+                "bilby.gw.prior.UniformInComponentsMassRatio("
+                f"minimum=0.1, maximum=1.0, name='mass_ratio{suffix}')"
+            )
+            skip.update([f"mass_1{suffix}", f"mass_2{suffix}", f"chirp_mass{suffix}", f"mass_ratio{suffix}"])
 
         for name, p in prior_dict.items():
             if name in skip:
@@ -499,12 +511,16 @@ class DINGO_pipeline(Pipeline_Amortized):
 
     def build_context_from_initialized_scenario(
         self,
+        parameters = None
     ):
         """
         Build DINGO sampler context from an already initialized GWScenario.
-
         Assumes scenario.setUpScenario() has already been called in main.
+        
+        parameters : 
         """
+        if parameters is None:
+            parameters = self.scenario.injct_params_waves
 
         ifos_by_name = {ifo.name: ifo for ifo in self.scenario.ifos}
         waveform = {}
@@ -523,11 +539,11 @@ class DINGO_pipeline(Pipeline_Amortized):
         return {
             "waveform": waveform,
             "asds": asds,
-            "parameters" : self.scenario.injct_params_waves[0]
+            "parameters" : parameters
         }
 
     def load_model(self):
-        latest_model_path =  self.train_dir / "model_latest.pt"
+        latest_model_path = self.train_dir / "model_latest.pt"
         device            = self.local_settings.get("device", "cpu")
         
         self.model = CopulaNormalizingFlowModel(
@@ -538,20 +554,38 @@ class DINGO_pipeline(Pipeline_Amortized):
         self.logger.info(f"$$$ loaded DINGO vector_copula_Model: {latest_model_path}")
         return self.model
 
-    def infer(self,num_samples:int):
+    def infer_from_strain(self,num_samples:int):
+        return self.infer(num_samples,self.build_context_from_initialized_scenario())
+
+    def infer(self,num_samples:int, injection):
+        """_summary_
+
+        Args:
+            num_samples (int): amount of samples
+            injection (): dict of dicts corresponding different overlapping signals
+
+        Raises:
+            ValueError: if any value is not a valid input
+
+        Returns:
+            pd.Dataframe: posterior distribution 
+        """
         current_model   = self.load_model()
         sampler         = GWSampler(model = current_model)
-        sampler.context = self.build_context_from_initialized_scenario()
+        sampler.context = injection
         sampler.run_sampler(num_samples=num_samples, batch_size=1_000, isJoint = True)
-        samples = sampler.samples
+        samples         = sampler.samples
 
         #post-process
         if {"geocent_time_A", "delta_t_AB"}.issubset(samples.columns):
             samples["geocent_time_B"] = samples["geocent_time_A"] + samples["delta_t_AB"]
         #tests: Decide what to do with these
         pos_columns = ["mass_1_A","mass_1_B","mass_2_A","mass_2_B","delta_t_AB"]
-        samples = self._constrain_sample(samples,pos_columns)
-        samples = add_derived_params_to_df(samples)
+        present_pos_columns = [  #filter those who are needed
+            column for column in pos_columns
+            if column in samples.columns
+        ]
+        samples = self._constrain_sample(samples,present_pos_columns)
         
         if samples.isna().any().any():
             raise ValueError("NaNs found in DINGO posterior samples.")
@@ -563,4 +597,3 @@ class DINGO_pipeline(Pipeline_Amortized):
         High level function to be used for the general test pipeline
         """
         raise NotImplementedError
-

@@ -11,7 +11,7 @@ from setUpLoggerScenario import setUpLoggerScenario
 ####     Main Loop     ####
 ###########################
 
-def Main(mode: RunMode, pipeline_type,RunDiagnostics = True):
+def Main(mode: RunMode, pipeline_type,RunDiagnostics = False):
     #start_from_chekpt only used for continuing when crash,has happend
     """_summary_
     Args:

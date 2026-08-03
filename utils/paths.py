@@ -22,4 +22,16 @@ def get_dingo_dir_yamls() -> Path:
     return get_dingo_dir() / "configs"
 
 def get_dingo_dir_data() -> Path:
-    return get_dingo_dir() / "data"
+    if "VSC_SCRATCH" in os.environ:
+        data_dir = Path(
+            os.environ.get(
+                "GW_DATA_DIR",
+                Path(os.environ["VSC_SCRATCH"]) / "GW_separation" / "data",
+            )
+        )
+    else:
+        data_dir = get_dingo_dir() / "data"
+
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    return data_dir

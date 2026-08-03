@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 @dataclass(frozen=True)
 class ScenarioConfig:
-    waveform_approximant: str  = "IMRPhenomXPHM" #IMRPhenomPv2  IMRPhenomD  IMRPhenomXPHM 
+    waveform_approximant: str  = "TaylorF2" #TaylorF2 "IMRPhenomXPHM" #IMRPhenomPv2  IMRPhenomD  IMRPhenomXPHM 
     minimum_frequency: float   = 10.0 #10
     sampling_frequency: float  = 2048.0 #4096
     reference_frequency: float = 20.0 #20
