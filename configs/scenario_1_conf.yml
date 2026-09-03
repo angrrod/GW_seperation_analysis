@@ -1,0 +1,17 @@
+scenario:
+  time_delta: 0.1 #time between the 2 signals
+  UseRelBinning: True 
+  ineject_random_sample: False  # generate a random or fixed signal-> needed for randomly testing
+  generate_new_signal: True  # generate a new signal can be random or not, # needed to update the stored params
+  scenarioId: "test_correlation_lower" #test_correlation_lower" #used for storing the PSD/noise strain  
+
+prior_controls:
+  restrict_prior: false
+  restriction_str: 0.5
+  use_deltas: false
+
+dynesty:
+  nlive: 2000
+  dlogz: 0.05
+  sample: rslice
+  bound: multi

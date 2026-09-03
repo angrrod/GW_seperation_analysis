@@ -2,10 +2,10 @@ import os
 from pathlib import Path
 
 def get_base_log_dir() -> Path:
-    return get_base_work_dir() / "logs"
+    return get_base_output_dir() / "logs"
 
 def get_postprocessing_dir() -> Path:
-    return get_base_work_dir() / "postProcessing"
+    return get_base_output_dir() / "postProcessing"
 
 def get_base_work_dir() -> Path:
     """
@@ -15,11 +15,17 @@ def get_base_work_dir() -> Path:
         return Path(os.environ.get("GW_INP_DIR", os.environ["VSC_DATA"]))
     return Path(".")
 
-def get_dingo_dir() -> Path:
-    return get_base_work_dir() / "Dingo"
+def get_base_output_dir() -> Path:
+    return get_base_work_dir() / "Output"
 
-def get_dingo_dir_yamls() -> Path:
-    return get_dingo_dir() / "configs"
+def get_dingo_dir() -> Path:
+    return get_base_output_dir() / "Dingo"
+
+def get_config_dir() -> Path:
+    return get_base_work_dir() / "configs"
+
+def get_scenario_data_dir() -> Path:
+    return get_base_output_dir() / "scenarioData"
 
 def get_dingo_dir_data() -> Path:
     if "VSC_SCRATCH" in os.environ:
@@ -33,5 +39,6 @@ def get_dingo_dir_data() -> Path:
         data_dir = get_dingo_dir() / "data"
 
     data_dir.mkdir(parents=True, exist_ok=True)
-
     return data_dir
+
+

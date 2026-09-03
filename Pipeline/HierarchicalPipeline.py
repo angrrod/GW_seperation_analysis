@@ -1,7 +1,6 @@
 from .Pipeline_Sampler import Pipeline_Sampler
 from .Pipeline_type import Pipeline_type
 from methods import SingleLikelihoodMethod,RunMode
-from config import DynestyConfig
 from scenario import GWScenario
 from bilby.gw.detector import InterferometerList
 import copy
@@ -13,8 +12,8 @@ class HierarchicalPipeline(Pipeline_Sampler):
     def __init__(self,logger,scenario:GWScenario):
         super().__init__(logger, scenario)
         self.pipeline_type           = Pipeline_type.HIERARCHICAL
-        self.singleSampler1          = SingleLikelihoodMethod(scenario, logger,self.config,self.pipeline_type.code,"_1") #run_sampler to true so that we always generate a new sample instead of using the one from the single method
-        self.singleSampler2          = SingleLikelihoodMethod(scenario, logger,self.config,self.pipeline_type.code,"_2")
+        self.singleSampler1          = SingleLikelihoodMethod(scenario, logger,self.pipeline_type.code,"_1") #run_sampler to true so that we always generate a new sample instead of using the one from the single method
+        self.singleSampler2          = SingleLikelihoodMethod(scenario, logger,self.pipeline_type.code,"_2")
         
     def run(self,runMode:RunMode):
         self.logger.info("$$$ generate Samples for hyrarchical model")
@@ -109,5 +108,3 @@ class HierarchicalPipeline(Pipeline_Sampler):
         )
         return new_ifo
         
-    def getConfig(self):
-        return DynestyConfig()

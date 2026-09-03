@@ -1,20 +1,16 @@
 from .Pipeline_Sampler import Pipeline_Sampler
-from .Pipeline_type import Pipeline_type
 from scenario import GWScenario
 from methods import SingleLikelihoodMethod, RunMode
-from config import PymcNutsConfig
 class MetroWithinGibbsPipeline(Pipeline_Sampler):
     #TODO: implement cosine, sine and geomcentric distance priors
     #      make sure arguents in single likelihood are passed correctly
     def __init__(self, logger, scenario:GWScenario):
         super().__init__(logger, scenario)
         # self.pipeline_type = TODO
-        self.singleLikl    = SingleLikelihoodMethod(scenario, logger, self.config,self.pipeline_type.code, "")
+        self.singleLikl    = SingleLikelihoodMethod(scenario, logger,self.pipeline_type.code, "")
     
     def run(self,runMode:RunMode):
         raise NotImplementedError
     
-    def getConfig(self):
-        return PymcNutsConfig()
     
     

@@ -9,8 +9,6 @@ from .Pipeline_Sampler import Pipeline_Sampler
 from bilby.gw.utils import noise_weighted_inner_product
 from utils import get_base_log_dir,get_base_work_dir
 
-from config import DynestyConfig
-
 from config.option import parse
 import trainer.denoise_pytorch_trainer
 from model.model_rnn import Dual_RNN_model
@@ -20,8 +18,8 @@ class TasNetPipeline(Pipeline_Sampler):
     def __init__(self,logger,scenario:GWScenario):
         super().__init__(logger, scenario)
         self.pipeline_type  = Pipeline_type.TASNET
-        self.singleSampler1 = SingleLikelihoodMethod(scenario, logger,self.config,self.pipeline_type.code,"_1")
-        self.singleSampler2 = SingleLikelihoodMethod(scenario, logger,self.config,self.pipeline_type.code,"_2")
+        self.singleSampler1 = SingleLikelihoodMethod(scenario, logger,self.pipeline_type.code,"_1")
+        self.singleSampler2 = SingleLikelihoodMethod(scenario, logger,self.pipeline_type.code,"_2")
         self.splitter       = self.getTasNetSplitter() #can be used to analyze other splitters
     
     def run(self,runMode:RunMode):
@@ -185,6 +183,3 @@ class TasNetPipeline(Pipeline_Sampler):
         )
         logl = -0.5 * rr
         return ifo_copy,float(logl)
-    
-    def getConfig(self):
-        return DynestyConfig()

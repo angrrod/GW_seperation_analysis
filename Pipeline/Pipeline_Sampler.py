@@ -4,17 +4,15 @@ from methods import RunMode
 from pathlib import Path
 import json
 from .Pipeline_type import Pipeline_type
-import pandas as pd
 from .Pipeline import Pipeline
+import pandas as pd
+from utils import load_config
 
 class Pipeline_Sampler(Pipeline):
     def __init__(self,logger,scenario:GWScenario):
         super().__init__(logger, scenario)
-        self.config = self.getConfig()  #decrepit code, remove it
+        self.config = load_config()  #decrepit code, remove it
         
-    @abstractmethod
-    def getConfig(self):
-        raise NotImplementedError
         
     @abstractmethod
     def run(self,runMode:RunMode):

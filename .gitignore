@@ -219,13 +219,7 @@ out/*
 !out/results.json
 .vscode
 logs
-HPC_diagnostics
+Output/*
 External/jointRB
-toy_problem/marginal_1
-toy_problem/marginal_2
-toy_problem/joint_SVI
-toy_problem/toy_problem
-toy_problem/plots
-Dingo/data
-toy_problem/toy_problem.ipynb
+toy_problem/*
 postProcessing/

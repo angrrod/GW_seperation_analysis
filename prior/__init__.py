@@ -1,4 +1,4 @@
 # methods/__init__.py
-from .prior import prior
+from .prior import SamplerPrior
 
-__all__ = ["prior"]
+__all__ = ["SamplerPrior"]

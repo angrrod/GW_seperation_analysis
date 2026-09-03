@@ -1,13 +1,10 @@
-import bilby
 from jointRB import OverlappingSignalsRelBinning
 from .Method import Method
 from scenario import GWScenario
-from prior import prior
-from config import ScenarioConfig
 
 class JointLikelihoodlMethod(Method):
-    def __init__(self,scenario:GWScenario,logger,config,pipeline_type_code:str):
-        super().__init__(scenario, logger, config, pipeline_type_code)
+    def __init__(self,scenario:GWScenario,logger, pipeline_type_code:str):
+        super().__init__(scenario, logger, pipeline_type_code)
         self.nameExtra = ""
         
     def getLikelihood(self,ifos_override):
@@ -22,9 +19,9 @@ class JointLikelihoodlMethod(Method):
         if self.prior is None:
             raise NotImplementedError("prior is not implemented")
         
-        if not self.scenario.config.UseRelBinning:
+        if not self.configs["scenario"]["UseRelBinning"]:
             raise NotImplementedError("joint likelihood only implemented with Relative binning")
-        if self.scenario.config.UseRelBinning:
+        if self.configs["scenario"]["UseRelBinning"]:
             waveform_generator = self.wg_rel
         else:
             waveform_generator = self.scenario.wg

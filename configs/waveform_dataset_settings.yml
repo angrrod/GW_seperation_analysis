@@ -1,0 +1,68 @@
+domain:
+  type: FrequencyDomain
+  f_min: 10.0
+  f_max: 1024.0
+  delta_f: 0.015625
+waveform_generator:
+  approximant: IMRPhenomXPHM #TaylorF2 "IMRPhenomXPHM" #IMRPhenomPv2  IMRPhenomD  IMRPhenomXPHM 
+  f_ref: 20.0
+intrinsic_prior:
+  mass_1_A: bilby.core.prior.Constraint(minimum=5.0, maximum=40.0, name='mass_1_A')
+  mass_2_A: bilby.core.prior.Constraint(minimum=4.0, maximum=30.0, name='mass_2_A')
+  chirp_mass_A: bilby.gw.prior.UniformInComponentsChirpMass(minimum=3.8884, maximum=30.0947,
+    name='chirp_mass_A')
+  mass_ratio_A: bilby.gw.prior.UniformInComponentsMassRatio(minimum=0.1, maximum=1.0,
+    name='mass_ratio_A')
+  mass_1_B: bilby.core.prior.Constraint(minimum=5.0, maximum=40.0, name='mass_1_B')
+  mass_2_B: bilby.core.prior.Constraint(minimum=4.0, maximum=30.0, name='mass_2_B')
+  chirp_mass_B: bilby.gw.prior.UniformInComponentsChirpMass(minimum=3.8884, maximum=30.0947,
+    name='chirp_mass_B')
+  mass_ratio_B: bilby.gw.prior.UniformInComponentsMassRatio(minimum=0.1, maximum=1.0,
+    name='mass_ratio_B')
+  a_1_A: bilby.core.prior.Uniform(minimum=0.0, maximum=0.99, name='a_1_A')
+  a_2_A: bilby.core.prior.Uniform(minimum=0.0, maximum=0.99, name='a_2_A')
+  tilt_1_A: bilby.core.prior.Sine(name='tilt_1_A')
+  tilt_2_A: bilby.core.prior.Sine(name='tilt_2_A')
+  phi_12_A: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='phi_12_A')
+  phi_jl_A: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='phi_jl_A')
+  a_1_B: bilby.core.prior.Uniform(minimum=0.0, maximum=0.99, name='a_1_B')
+  a_2_B: bilby.core.prior.Uniform(minimum=0.0, maximum=0.99, name='a_2_B')
+  tilt_1_B: bilby.core.prior.Sine(name='tilt_1_B')
+  tilt_2_B: bilby.core.prior.Sine(name='tilt_2_B') 
+  phi_12_B: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='phi_12_B')
+  phi_jl_B: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='phi_jl_B')
+  luminosity_distance_A: 100.0
+  dec_A: 0.0
+  ra_A: 0.0
+  theta_jn_A: 0.0
+  psi_A: 0.0
+  phase_A: 0.0
+  geocent_time_A: 0.0
+  luminosity_distance_B: 100.0
+  dec_B: 0.0
+  ra_B: 0.0
+  theta_jn_B: 0.0
+  psi_B: 0.0
+  phase_B: 0.0
+  delta_t_AB: 0.0
+extrinsic_prior:
+  luminosity_distance_A: 100.0
+  dec_A: 0.0
+  ra_A: 0.0
+  theta_jn_A: 0.0
+  psi_A: 0.0
+  phase_A: 0.0
+  geocent_time_A: 0.0
+  luminosity_distance_B: 100.0
+  dec_B: 0.0
+  ra_B: 0.0
+  theta_jn_B: 0.0
+  psi_B: 0.0
+  phase_B: 0.0
+  delta_t_AB: 0.0
+num_samples: 5000000
+compression:
+  svd:
+    size: 500
+    num_training_samples: 50000
+    num_validation_samples: 10000

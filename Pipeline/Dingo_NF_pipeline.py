@@ -3,39 +3,112 @@ from .Pipeline_Amortized import Pipeline_Amortized
 from scenario import GWScenario
 import yaml
 from pathlib import Path
-from utils import get_dingo_dir_yamls, get_dingo_dir_data
 import subprocess
 import os
-from config import DynestyConfig
-from threadpoolctl import threadpool_limits
+import hashlib
+from unittest.mock import patch
+import dingo.gw.training.train_pipeline as dingo_train_pipeline
 from dingo.gw.training.train_pipeline import (
-    prepare_training_new,
+    prepare_training_resume,
     train_stages,
 )
 import numpy as np
 from dingo.gw.domains import build_domain
 from dingo.gw.noise.asd_dataset import ASDDataset
-import math
 import torch
-import pyro.distributions as dist
-from torch.distributions import constraints
 from dingo.gw.dataset.generate_dataset import _generate_dataset_main
 # from dingo.core.posterior_models.vector_copula_Model import vector_copula_Model
 from dingo.core.posterior_models.vector_copula_Model import CopulaNormalizingFlowModel
 from dingo.gw.inference.gw_samplers import GWSampler
 
-def read_yaml(path: Path) -> dict:
-    with open(path, "r") as f:
-        obj = yaml.safe_load(f)
+from utils.paths import get_config_dir, get_dingo_dir_data
+from utils.utils import load_config
+from copy import deepcopy
+from numbers import Number
+import wandb
 
-    if obj is None:
-        raise ValueError(f"YAML file is empty: {path}")
 
-    return obj
+WATCHED_TIME_PARAMETERS = {
+    "delta_t_AB",
+    "geocent_time_A",
+    "geocent_time_B",
+    
+    # Intrinsic parameters we care about
+    "chirp_mass_A",
+    "mass_ratio_A",
+    "mass_1_A",
+    "mass_2_A",
 
-def write_yaml(path: Path, obj: dict):
-    with open(path, "w") as f:
-        yaml.safe_dump(obj, f, sort_keys=False)
+    "chirp_mass_B",
+    "mass_ratio_B",
+    "mass_1_B",
+    "mass_2_B",
+}
+
+
+def _collect_watched_scalars(
+    obj,
+    path="sample",
+):
+    """
+    Recursively find selected scalar values in a nested
+    Dingo sample dictionary.
+    """
+    found = []
+
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            child_path = f"{path}.{key}"
+
+            found.extend(
+                _collect_watched_scalars(
+                    value,
+                    child_path,
+                )
+            )
+
+    elif isinstance(obj, (list, tuple)):
+        for index, value in enumerate(obj):
+            found.extend(
+                _collect_watched_scalars(
+                    value,
+                    f"{path}[{index}]",
+                )
+            )
+
+    else:
+        leaf_name = path.rsplit(".", 1)[-1]
+
+        if leaf_name not in WATCHED_TIME_PARAMETERS:
+            return found
+
+        if torch.is_tensor(obj):
+            if obj.numel() == 1:
+                found.append(
+                    (
+                        path,
+                        float(obj.detach().cpu()),
+                    )
+                )
+
+        elif isinstance(obj, np.ndarray):
+            if obj.size == 1:
+                found.append(
+                    (
+                        path,
+                        float(obj.reshape(-1)[0]),
+                    )
+                )
+
+        elif isinstance(obj, Number):
+            found.append(
+                (
+                    path,
+                    float(obj),
+                )
+            )
+
+    return found
 
 def masses_to_chirp_mass_and_q(mass_1, mass_2):
     m1 = np.maximum(mass_1, mass_2)
@@ -76,29 +149,267 @@ def add_derived_params_to_df(samples):
     return samples
 
 class DINGO_pipeline(Pipeline_Amortized):
-    def __init__(self, logger, scenario:GWScenario, generateData:bool):
+    def __init__(self, logger, scenario:GWScenario, generateData:bool, nbr_cores:int = 1):
         super().__init__(logger, scenario)
-        self.MethodConfig   = DynestyConfig()  #temporary dummy method
+        self.nbr_cores    = nbr_cores
         # set up YML's so that scenario is correctly translated to bilby
         # self.pipeline_type = Pipeline_type.DINGO
         self.train_dir = get_dingo_dir_data() / "training_run"
         os.makedirs(self.train_dir, exist_ok=True)
-        self.export_configs()
-        with open(self.config_paths["train"], "r") as f:
-            self.train_settings = yaml.safe_load(f)
-
-        self.local_settings = self.train_settings.pop("local") #.pop("local")
+        self.waveform_settings = load_config("waveform_dataset_settings.yml")
+        self.asd_settings = load_config("asd_dataset_settings.yml")
+        self.train_settings = load_config("training_copula.yml")
         
+        # Dingo treats `local` separately from the training settings. Work on a
+        # private copy so that configuration dictionaries are never mutated.
+        self.train_settings = deepcopy(self.train_settings)
+        self.local_settings = self.train_settings.pop("local", {})
+
+        # Dingo's waveform-dataset generator requires the original YAML path.
+        # Resolve it through the same config utility used by load_config().
+        self.waveform_settings_path = get_config_dir() / "waveform_dataset_settings.yml"
+        
+
+        # Dataset outputs are configuration-driven. If a path is absent, retain
+        # the old Dingo/data fallback.
+        waveform_dataset_path = (
+            self.train_settings.get("data", {}).get("waveform_dataset_path")
+        )
+        asd_dataset_path = self._get_asd_dataset_path_from_training()
+        self.artifact_paths = {
+            "waveform_dataset": self._resolve_artifact_path(
+                waveform_dataset_path, "waveform_dataset.hdf5"
+            ),
+            "asd_dataset": self._resolve_artifact_path(
+                asd_dataset_path, "asd_dataset.hdf5"
+            ),
+        }
+        
+        local_cache = os.environ.get("GW_LOCAL_CACHE")
+        if local_cache is not None:
+            self.local_settings["local_cache_path"] = local_cache
+
+        print(
+            "Dingo local cache:",
+            self.local_settings.get("local_cache_path")
+        )
+        if (
+            self.local_settings.get("device", "cpu") == "cuda"
+            and not torch.cuda.is_available()
+        ):
+            print(
+                "CUDA requested but unavailable. "
+                "Falling back to CPU."
+            )
+            self.local_settings["device"] = "cpu"
+            
         if generateData:
             self.set_up() 
-        pm,wfd     = self.prerp_train()
-        self.model = pm
-        self.wfd   = wfd
+            
+        self.model = None
+        self.waveform_dataset = None
 
     def run_cmd(self, cmd):
         cmd = [str(c) for c in cmd]
         self.logger.info("$$$ running: " + " ".join(cmd))
         subprocess.run(cmd, check=True)
+
+    def _stage_debug_hook(
+        self,
+        wfd,
+        stage,
+    ):
+        """
+        Run one sample manually through every Dingo transform and
+        log where the event-time variables occur.
+
+        This executes in the main process before DataLoader workers
+        are created.
+        """
+        transform_pipeline = wfd.transform
+
+        transforms = getattr(
+            transform_pipeline,
+            "transforms",
+            None,
+        )
+
+        if transforms is None:
+            print(
+                "Could not inspect transform pipeline: "
+                f"{type(transform_pipeline)} has no "
+                "'transforms' attribute."
+            )
+            return
+
+        print("\n=== DINGO TRANSFORM CHAIN ===")
+
+        transform_rows = []
+
+        for index, transform in enumerate(transforms):
+            transform_name = type(transform).__name__
+
+            print(
+                f"{index:02d}: {transform_name}"
+            )
+
+            transform_rows.append(
+                [
+                    index,
+                    transform_name,
+                ]
+            )
+
+        # Obtain a raw WaveformDataset item without applying the
+        # transform pipeline automatically.
+        original_transform = wfd.transform
+
+        try:
+            wfd.transform = None
+            sample = deepcopy(wfd[0])
+        finally:
+            wfd.transform = original_transform
+
+        parameter_rows = []
+
+        # Apply each transform manually and inspect the result.
+        for index, transform in enumerate(transforms):
+            transform_name = type(transform).__name__
+
+            sample = transform(sample)
+
+            watched_values = _collect_watched_scalars(
+                sample
+            )
+
+            for parameter_path, value in watched_values:
+                print(
+                    f"{index:02d} "
+                    f"{transform_name:40s} "
+                    f"{parameter_path} = {value}"
+                )
+
+                parameter_rows.append(
+                    [
+                        index,
+                        transform_name,
+                        parameter_path,
+                        value,
+                    ]
+                )
+
+        if wandb.run is not None:
+            wandb.log(
+                {
+                    "epoch": self.model.epoch,
+                    "debug/transform_chain": wandb.Table(
+                        columns=[
+                            "index",
+                            "transform",
+                        ],
+                        data=transform_rows,
+                    ),
+                    "debug/time_parameter_path": (
+                        wandb.Table(
+                            columns=[
+                                "index",
+                                "transform",
+                                "parameter_path",
+                                "value",
+                            ],
+                            data=parameter_rows,
+                        )
+                    ),
+                }
+            )
+
+    def _epoch_debug_hook(
+        self,
+        model,
+        epoch,
+        train_loader,
+        test_loader,
+        train_loss,
+        test_loss,
+        learning_rates,
+    ):
+        metrics = {}
+
+        # ---------------------------------
+        # Basic epoch information
+        # ---------------------------------
+
+        metrics["debug/train_loss"] = float(
+            train_loss
+        )
+
+        metrics["debug/test_loss"] = float(
+            test_loss
+        )
+
+        metrics["debug/loss_gap"] = float(
+            test_loss - train_loss
+        )
+
+        # ---------------------------------
+        # Optimizer parameter groups
+        # ---------------------------------
+
+        for index, group in enumerate(
+            model.optimizer.param_groups
+        ):
+            group_name = group.get(
+                "group_name",
+                f"group_{index}",
+            )
+
+            metrics[
+                f"debug/lr/{group_name}"
+            ] = float(group["lr"])
+
+        # ---------------------------------
+        # Parameter norms
+        # ---------------------------------
+
+        total_norm_sq = 0.0
+
+        for name, parameter in (
+            model.network.named_parameters()
+        ):
+            if not parameter.requires_grad:
+                continue
+
+            value = parameter.detach()
+
+            norm = torch.linalg.vector_norm(
+                value
+            )
+
+            total_norm_sq += float(
+                norm.cpu()
+            ) ** 2
+
+        metrics["debug/trainable_parameter_norm"] = (
+            total_norm_sq ** 0.5
+        )
+
+        # ---------------------------------
+        # Reduced-basis layer specifically
+        # ---------------------------------
+
+        for name, parameter in (
+            model.network.named_parameters()
+        ):
+            if "layers_rb" in name:
+                metrics[
+                    f"debug/rb_norm/{name}"
+                ] = float(
+                    torch.linalg.vector_norm(
+                        parameter.detach()
+                    ).cpu()
+                )
+
+        return metrics
 
     def _resolve_input_file(self, filename: str) -> Path:
         base = os.environ.get("GW_INP_DIR")
@@ -113,234 +424,30 @@ class DINGO_pipeline(Pipeline_Amortized):
 
         raise FileNotFoundError(f"Could not resolve input file: {filename}")
 
-    def _prior_to_yaml_string(self, name, p) -> str:
-        cls = p.__class__.__name__
+    def _resolve_artifact_path(self, configured_path, fallback_name: str) -> Path:
+        """Resolve an output artifact path without depending on the working directory."""
+        if configured_path:
+            path = Path(configured_path)
+            if path.is_absolute():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                return path
 
-        if cls == "Uniform":
-            return (
-                f"bilby.core.prior.Uniform("
-                f"minimum={float(p.minimum)}, maximum={float(p.maximum)}, "
-                f"name='{name}')"
-            )
-            
-        if cls == "DeltaFunction":
-            return (
-                f"bilby.core.prior.DeltaFunction("
-                f"peak={float(p.peak)}, "
-                f"name='{name}')"
-            )
-            
-        if cls == "PowerLaw":
-            return (
-                f"bilby.core.prior.PowerLaw("
-                f"alpha={float(p.alpha)}, "
-                f"minimum={float(p.minimum)}, maximum={float(p.maximum)}, "
-                f"name='{name}')"
-            )
+            # Dingo configs historically use paths such as Dingo/data/foo.hdf5.
+            # Keep only the configured filename and anchor it to the project's
+            # canonical Dingo data directory.
+            path = get_dingo_dir_data() / path.name
+        else:
+            path = get_dingo_dir_data() / fallback_name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
 
-        if cls == "Sine":
-            return f"bilby.core.prior.Sine(name='{name}')"
-
-        if cls == "Cosine":
-            return f"bilby.core.prior.Cosine(name='{name}')"
-
-        if cls == "Constraint":
-            return (
-                f"bilby.core.prior.Constraint("
-                f"minimum={float(p.minimum)}, maximum={float(p.maximum)}, "
-                f"name='{name}')"
-            )
-
-        if cls == "UniformSourceFrame":
-            if name in {"luminosity_distance_A","luminosity_distance_B"}:
-                return (
-                    f"bilby.gw.prior.UniformSourceFrame("
-                    f"minimum={float(p.minimum)}, maximum={float(p.maximum)}, "
-                    f"name=luminosity_distance)"
-                )
-            else:
-                return (
-                    f"bilby.gw.prior.UniformSourceFrame("
-                    f"minimum={float(p.minimum)}, maximum={float(p.maximum)}, "
-                    f"name='{name}')"
-                )
-        raise NotImplementedError(f"Do not know how to export prior {name}: {cls}")
-
-    def _export_prior_yaml_blocks(self,fixed_extrinsic_prior = True) -> tuple[dict, dict]:
-        INTRINSIC_BASE_PARAMS = {
-            "mass_1",
-            "mass_2",
-            "mass_ratio",
-            "chirp_mass",
-            "a_1", 
-            "a_2",
-            "tilt_1",
-            "tilt_2",
-            "phi_12", 
-            "phi_jl",
-        }
-
-        EXTRINSIC_BASE_PARAMS = {
-            "luminosity_distance" : 100.0,
-            "dec"                 : 0.0,
-            "ra"                  : 0.0,
-            "theta_jn"            : 0.0,
-            "psi"                 : 0.0, 
-            "phase"               : 0.0,
-            "geocent_time"        : 0.0,
-        }
-        
-        SIGNAL_SUFFIXES = ("_A", "_B")
-        
-        INTRINSIC_PARAMS = {
-            f"{name}{suffix}"
-            for name in INTRINSIC_BASE_PARAMS
-            for suffix in SIGNAL_SUFFIXES
-        }
-
-        EXTRINSIC_PARAMS = {
-            f"{name}{suffix}": default
-            for name, default in EXTRINSIC_BASE_PARAMS.items()
-            for suffix in SIGNAL_SUFFIXES
-        }
-        
-        EXTRINSIC_PARAMS["delta_t_AB"] = 0.0
-        prior_dict = self.scenario.prior.getJointPriors()
-
-        intrinsic_prior = {}
-        extrinsic_prior = {}
-
-        # DINGO waveform datasets usually want component masses,
-        suffixes = ["_A","_B"]
-        skip = set()
-        for suffix in suffixes:
-            intrinsic_prior[f"mass_1{suffix}"] = (
-                "bilby.core.prior.Constraint("
-                f"minimum=5.0, maximum=40.0, name='mass_1{suffix}')"
-            )
-            intrinsic_prior[f"mass_2{suffix}"] = (
-                "bilby.core.prior.Constraint("
-                f"minimum=4.0, maximum=30.0, name='mass_2{suffix}')"
-            )
-            intrinsic_prior[f"chirp_mass{suffix}"] = (  #mass_ratio
-                "bilby.gw.prior.UniformInComponentsChirpMass("
-                f"minimum=3.8884, maximum=30.0947, name='chirp_mass{suffix}')"
-            )
-            intrinsic_prior[f"mass_ratio{suffix}"] = ( 
-                "bilby.gw.prior.UniformInComponentsMassRatio("
-                f"minimum=0.1, maximum=1.0, name='mass_ratio{suffix}')"
-            )
-            skip.update([f"mass_1{suffix}", f"mass_2{suffix}", f"chirp_mass{suffix}", f"mass_ratio{suffix}"])
-
-        for name, p in prior_dict.items():
-            if name in skip:
-                continue
-
-            prior_str = self._prior_to_yaml_string(name, p)
-
-            if name in INTRINSIC_PARAMS:
-                intrinsic_prior[name] = prior_str
-            elif name in EXTRINSIC_PARAMS:
-                if fixed_extrinsic_prior:
-                    extrinsic_prior[name] = prior_str
-                else:
-                    extrinsic_prior[name] = EXTRINSIC_PARAMS.get(name)
-            else:
-                raise ValueError(
-                    f"Prior parameter {name!r} is neither intrinsic nor extrinsic. "
-                    "Classify it explicitly."
-                )
-
-        return intrinsic_prior, extrinsic_prior
-
-    def _patch_waveform_yaml(self):
-        cfg = self.scenario.config
-
-        yml = read_yaml(get_dingo_dir_yamls() / "waveform_dataset_settings.yml")
-
-        yml["domain"]["f_min"] = float(cfg.minimum_frequency)
-        yml["domain"]["f_max"] = float(cfg.sampling_frequency / 2)
-        yml["domain"]["delta_f"] = float(1.0 / cfg.duration)
-
-        yml["waveform_generator"]["approximant"] = cfg.waveform_approximant
-        yml["waveform_generator"]["f_ref"] = float(cfg.reference_frequency)
-        
-        intrinsic_prior, extrinsic_prior = self._export_prior_yaml_blocks(False)
-
-        yml["intrinsic_prior"] = intrinsic_prior | extrinsic_prior
-        yml["extrinsic_prior"] = extrinsic_prior
-        
-        dst = get_dingo_dir_yamls() / "waveform_dataset_settings.yml"
-        write_yaml(dst, yml)
-        return dst
-
-    def _patch_asd_yaml(self):
-        cfg = self.scenario.config
-
-        yml = read_yaml(get_dingo_dir_yamls() / "asd_dataset_settings.yml")
-        
-        yml["dataset_settings"]["f_s"] = int(cfg.sampling_frequency)
-        yml["dataset_settings"]["T"] = float(cfg.duration)
-        yml["dataset_settings"]["time_psd"] = max(4 * float(cfg.duration), 1024)
-        ce_psd = self._resolve_input_file(cfg.ASD_file_name_CE + "_PSD.txt")
-        yml["dataset_settings"]["detectors"] = ["H1", "L1"]
-        yml["asds"] = {
-            "H1": str(ce_psd),
-            "L1": str(ce_psd),
-        }
-
-        dst = get_dingo_dir_yamls() / "asd_dataset_settings.yml"
-        write_yaml(dst, yml)
-        return dst
-
-    def _patch_training_yaml(self):
-        cfg = self.scenario.config
-        
-        training_name = "training_copula.yml"# "training.yml"
-        
-        train_yml = read_yaml(get_dingo_dir_yamls() / training_name)
-        waveform_yml = read_yaml(get_dingo_dir_yamls() / "waveform_dataset_settings.yml")
-        
-        train_yml.setdefault("data", {})
-        train_yml["data"].setdefault("ref_time", 0.0)
-        # Required by prepare_training_new()
-        train_yml["data"]["waveform_dataset_path"] = str(
-            get_dingo_dir_data() / "waveform_dataset.hdf5"
-        )
-
-        # Required by build_svd_for_embedding_network()
-        # TODO: fix this
-        # _, extrinsic_prior = self._export_prior_yaml_blocks()
-        # train_yml["data"]["extrinsic_prior"] = extrinsic_prior
-
-        # Usually useful / expected in DINGO train settings
-        train_yml["data"].setdefault("train_fraction", 0.95)
-
-        # Keep training domain consistent with waveform dataset.
-        train_yml["data"]["domain_update"] = {
-            "f_min": float(cfg.minimum_frequency),
-            "f_max": float(cfg.sampling_frequency / 2),
-        }
-
-        # Keep detector list consistent with your ASD setup.
-        train_yml["data"]["detectors"] = ["H1", "L1"]
-
-        # Required later by prepare_training_new()
-        train_yml.setdefault("training", {})
-        train_yml["training"].setdefault("stage_0", {})
-        train_yml["training"]["stage_0"]["asd_dataset_path"] = str(
-            get_dingo_dir_data() / "asd_dataset.hdf5"
-        )
-
-        # Robust local defaults.
-        train_yml.setdefault("local", {})
-        train_yml["local"].setdefault("device", "cpu")
-        train_yml["local"].setdefault("num_workers", 1)
-        train_yml["local"].setdefault("leave_waveforms_on_disk", True)
-
-        dst = get_dingo_dir_yamls() / training_name
-        write_yaml(dst, train_yml)
-        return dst
+    def _get_asd_dataset_path_from_training(self):
+        """Return the ASD dataset path declared by the first training stage."""
+        for stage in self.train_settings.get("training", {}).values():
+            path = stage.get("asd_dataset_path")
+            if path:
+                return path
+        return None
 
     def _constrain_sample(self,samples,pos_columns):
         mask = (samples[pos_columns] > 0).all(axis=1)
@@ -349,40 +456,206 @@ class DINGO_pipeline(Pipeline_Amortized):
         samples = samples.loc[mask].copy()
         return samples
 
-    def export_configs(self):
-        #combines the bilby backend to make it compatible with DINGO, reads the existing config and writes to yml files used in DINGO, to make them consistent
-        self.config_paths = {
-            "waveform" : self._patch_waveform_yaml(),
-            "asd"      : self._patch_asd_yaml(),
-            "train"    : self._patch_training_yaml()
+    def _get_svd_cache_signature(self) -> str:
+        """
+        Build a hash describing the configuration on which the
+        embedding-network SVD basis depends.
+
+        If these settings change, the cached basis is not reused.
+        """
+
+        relevant_config = {
+            # Increment this manually if our caching implementation changes.
+            "cache_version": 1,
+
+            # Waveform family, frequency grid, priors, etc.
+            "waveform": self.waveform_settings,
+
+            # ASD / detector configuration.
+            "asd": self.asd_settings,
+
+            # Dingo data settings used when constructing the SVD.
+            "data": self.train_settings["data"],
+
+            # Requested SVD dimensions/settings.
+            "svd": (
+                self.train_settings
+                .get("model", {})
+                .get("embedding_kwargs", {})
+                .get("svd", {})
+            ),
         }
-        
-        self.artifact_paths = {
-            "waveform_dataset": get_dingo_dir_data() / "waveform_dataset.hdf5",
-            "asd_dataset": get_dingo_dir_data() / "asd_dataset.hdf5",
-        }
-        
-        return self.config_paths
+
+        serialized = yaml.safe_dump(
+            relevant_config,
+            sort_keys=True,
+        )
+
+        return hashlib.sha256(
+            serialized.encode("utf-8")
+        ).hexdigest()
+
+    def _prepare_training_new_with_svd_cache(self):
+        """
+        Run Dingo's standard prepare_training_new(), but cache the
+        final V_rb_list returned by build_svd_for_embedding_network().
+
+        Dingo itself is not modified.
+
+        First compatible run:
+            Dingo builds SVD normally -> cache V_rb_list.
+
+        Later compatible run:
+            load cached V_rb_list -> skip expensive SVD construction.
+        """
+
+        cache_path = (
+            self.train_dir
+            / "embedding_svd_V_rb_cache.pt"
+        )
+
+        expected_signature = (
+            self._get_svd_cache_signature()
+        )
+
+        # This is Dingo's ORIGINAL implementation.
+        original_svd_builder = (
+            dingo_train_pipeline
+            .build_svd_for_embedding_network
+        )
+
+        def cached_svd_builder(*args, **kwargs):
+            """
+            Drop-in replacement used only while
+            prepare_training_new() is executing.
+            """
+
+            # ---------------------------------------------
+            # Try cached basis
+            # ---------------------------------------------
+
+            if cache_path.exists():
+                try:
+                    cache = torch.load(
+                        cache_path,
+                        map_location="cpu",
+                        weights_only=False,
+                    )
+
+                    cached_signature = cache.get(
+                        "signature"
+                    )
+
+                    if (
+                        cached_signature
+                        == expected_signature
+                    ):
+                        self.logger.info(
+                            "$$$ loading cached DINGO "
+                            f"embedding SVD from {cache_path}"
+                        )
+
+                        V_rb_list = cache[
+                            "V_rb_list"
+                        ]
+
+                        for i, V in enumerate(
+                            V_rb_list
+                        ):
+                            self.logger.info(
+                                "$$$ cached V_rb "
+                                f"[{i}] shape = "
+                                f"{getattr(V, 'shape', None)}"
+                            )
+
+                        return V_rb_list
+
+                    self.logger.info(
+                        "$$$ existing SVD cache is "
+                        "incompatible with current "
+                        "configuration; rebuilding."
+                    )
+
+                except Exception as exc:
+                    self.logger.warning(
+                        "$$$ could not load existing "
+                        "SVD cache; rebuilding. "
+                        f"Reason: {exc}"
+                    )
+
+            # ---------------------------------------------
+            # No valid cache -> use Dingo unchanged
+            # ---------------------------------------------
+
+            self.logger.info(
+                "$$$ building embedding SVD using "
+                "standard DINGO implementation"
+            )
+
+            V_rb_list = original_svd_builder(
+                *args,
+                **kwargs,
+            )
+
+            # ---------------------------------------------
+            # Store the EXACT result Dingo returns
+            # ---------------------------------------------
+
+            torch.save(
+                {
+                    "signature": expected_signature,
+                    "V_rb_list": V_rb_list,
+                },
+                cache_path,
+            )
+
+            self.logger.info(
+                "$$$ saved DINGO embedding SVD "
+                f"cache to {cache_path}"
+            )
+
+            return V_rb_list
+
+        # -------------------------------------------------
+        # Temporarily replace only the function used inside
+        # prepare_training_new().
+        #
+        # As soon as this `with` block exits, Dingo's
+        # original function is restored automatically.
+        # -------------------------------------------------
+
+        with patch.object(
+            dingo_train_pipeline,
+            "build_svd_for_embedding_network",
+            cached_svd_builder,
+        ):
+            pm, wfd = (
+                dingo_train_pipeline
+                .prepare_training_new(
+                    train_settings=self.train_settings,
+                    train_dir=str(self.train_dir),
+                    local_settings=self.local_settings,
+                )
+            )
+
+        return pm, wfd
 
     def generate_waveform_dataset(self):
-        if not self.config_paths:
-            self.export_configs()
 
-        settings_file = str(self.config_paths["waveform"])
+        settings_file = str(self.waveform_settings_path)
         out_file = str(self.artifact_paths["waveform_dataset"])
-        num_processes = int(self.MethodConfig.cores)
         num_signals = 2
 
         self.logger.info(
             "$$$ generating DINGO waveform dataset directly: "
             f"settings={settings_file}, out_file={out_file}, "
-            f"num_processes={num_processes}, num_signals={num_signals}"
+            f"num_processes={self.nbr_cores}, num_signals={num_signals}"
         )
 
         _generate_dataset_main(
             settings_file=settings_file,
             out_file=out_file,
-            num_processes=num_processes,
+            num_processes=self.nbr_cores,
             num_signals=num_signals,
         )
 
@@ -394,14 +667,22 @@ class DINGO_pipeline(Pipeline_Amortized):
         It simply packages the custom design curve into the ASDDataset format expected
         by DINGO training.
         """
-        #scenario config
-        cfg = self.scenario.config
-
         out_file = self.artifact_paths["asd_dataset"]
         out_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        dataset_settings = deepcopy(self.asd_settings["dataset_settings"])
+        detectors = list(dataset_settings["detectors"])
+        if not detectors:
+            raise ValueError("ASD config must define at least one detector.")
 
-        psd_file = self._resolve_input_file(cfg.ASD_file_name_CE + "_PSD.txt")
+        asd_paths = self.asd_settings.get("asds", {})
+        reference_detector = detectors[0]
+        if reference_detector not in asd_paths:
+            raise KeyError(
+                f"No ASD/PSD file configured for detector {reference_detector!r}."
+            )
 
+        psd_file = self._resolve_input_file(asd_paths[reference_detector])
         raw = np.loadtxt(psd_file)
 
         # Common format: two columns [frequency, PSD or ASD].
@@ -413,15 +694,12 @@ class DINGO_pipeline(Pipeline_Amortized):
                 f"Expected {psd_file} to have at least two columns: frequency and PSD/ASD."
             )
 
-        f_min = float(cfg.minimum_frequency)
-        f_max = float(cfg.sampling_frequency / 2)
-        delta_f = float(1.0 / cfg.duration)
-
+        waveform_domain = self.waveform_settings["domain"]
         domain_dict = {
             "type": "UniformFrequencyDomain",
-            "f_min": f_min,
-            "f_max": f_max,
-            "delta_f": delta_f,
+            "f_min": float(waveform_domain["f_min"]),
+            "f_max": float(waveform_domain["f_max"]),
+            "delta_f": float(waveform_domain["delta_f"]),
         }
         domain = build_domain(domain_dict)
         f_target = domain()
@@ -442,26 +720,22 @@ class DINGO_pipeline(Pipeline_Amortized):
 
         # DINGO expects shape (num_asd_samples, num_frequency_bins).
         asd_array = np.array([asd], dtype=np.float32)
+        
+        dataset_settings["source"] = "custom_fixed_design_psd"
+        dataset_settings["psd_file"] = str(psd_file)
 
         dataset_dict = {
             "settings": {
-                "dataset_settings": {
-                    "detectors": ["H1", "L1"],
-                    "f_s": int(cfg.sampling_frequency),
-                    "T": float(cfg.duration),
-                    "time_psd": max(4 * float(cfg.duration), 1024),
-                    "source": "custom_fixed_design_psd",
-                    "psd_file": str(psd_file),
-                },
+                "dataset_settings": dataset_settings,
                 "domain_dict": domain_dict,
             },
             "asds": {
-                "H1": asd_array,
-                "L1": asd_array.copy(),
+                name: asd_array.copy()
+                for name in detectors
             },
             "gps_times": {
-                "H1": np.array([0.0]),
-                "L1": np.array([0.0]),
+                name: np.array([0.0])
+                for name in detectors
             },
         }
 
@@ -480,33 +754,73 @@ class DINGO_pipeline(Pipeline_Amortized):
         # if not self.artifact_paths["asd_dataset"].exists():
         self.generate_asd_dataset()
 
-    def prerp_train(self):
+    def prepare_training(self):
+        """
+        Prepare a new Dingo training run.
 
-        pm, wfd = prepare_training_new(
-            train_settings=self.train_settings,
-            train_dir=str(self.train_dir),
-            local_settings=self.local_settings,
+        The expensive embedding SVD is cached between compatible
+        training runs.
+        """
+
+        if (
+            self.model is not None
+            and self.waveform_dataset is not None
+        ):
+            return (
+                self.model,
+                self.waveform_dataset,
+            )
+
+        pm, wfd = (
+            self._prepare_training_new_with_svd_cache()
         )
 
         self.model = pm
         self.waveform_dataset = wfd
-        return pm,wfd
+        self.wfd = wfd
 
-    def train(self,start_from_checkpoint = False):
+        return pm, wfd
+
+    def train(self,start_from_checkpoint = False, checkpoint_name="model_latest.pt",):
         path = self.train_dir / 'history.txt'
-        if path.exists():
-            path.unlink()
+        if not start_from_checkpoint:
+            path = self.train_dir / "history.txt"
+            if path.exists():
+                path.unlink()
         
         if start_from_checkpoint:
-            self.load_model()
 
-        with threadpool_limits(limits=1, user_api="blas"):
-            complete = train_stages(
-                pm=self.model,
-                wfd=self.waveform_dataset,
-                train_dir=str(self.train_dir),
-                local_settings=self.local_settings,
+            checkpoint_path = (
+                self.train_dir / checkpoint_name
             )
+
+            self.model, self.waveform_dataset = (
+                prepare_training_resume(
+                    checkpoint_name=str(checkpoint_path),
+                    local_settings=self.local_settings,
+                    train_dir=str(self.train_dir),
+                )
+            )
+
+
+        else:
+            # THIS is where prepare_training() gets called.
+            self.prepare_training()
+            
+        # self.model.stage_debug_hook = (
+        #     self._stage_debug_hook
+        # )
+        # self.model.epoch_debug_hook = (
+        #     self._epoch_debug_hook
+        # )
+
+
+        complete = train_stages(
+            pm=self.model,
+            wfd=self.waveform_dataset,
+            train_dir=str(self.train_dir),
+            local_settings=self.local_settings,
+        )
         return complete
 
     def build_context_from_initialized_scenario(
@@ -526,8 +840,7 @@ class DINGO_pipeline(Pipeline_Amortized):
         waveform = {}
         asds = {}
         
-        asd_settings = read_yaml(self.config_paths["asd"])
-        detectors = asd_settings["dataset_settings"]["detectors"]
+        detectors = self.asd_settings["dataset_settings"]["detectors"]
 
         for name in detectors:
             ifo = ifos_by_name[name]
@@ -542,8 +855,8 @@ class DINGO_pipeline(Pipeline_Amortized):
             "parameters" : parameters
         }
 
-    def load_model(self):
-        latest_model_path = self.train_dir / "model_latest.pt"
+    def load_model(self,model_name:str = "model_latest.pt"):
+        latest_model_path = self.train_dir / model_name
         device            = self.local_settings.get("device", "cpu")
         
         self.model = CopulaNormalizingFlowModel(
@@ -554,10 +867,10 @@ class DINGO_pipeline(Pipeline_Amortized):
         self.logger.info(f"$$$ loaded DINGO vector_copula_Model: {latest_model_path}")
         return self.model
 
-    def infer_from_strain(self,num_samples:int):
-        return self.infer(num_samples,self.build_context_from_initialized_scenario())
+    def infer_from_strain(self,num_samples:int,model_name:str = "model_latest.pt"):
+        return self.infer(num_samples,self.build_context_from_initialized_scenario(),model_name)
 
-    def infer(self,num_samples:int, injection):
+    def infer(self,num_samples:int, injection,model_name:str = "model_latest.pt"):
         """_summary_
 
         Args:
@@ -570,7 +883,7 @@ class DINGO_pipeline(Pipeline_Amortized):
         Returns:
             pd.Dataframe: posterior distribution 
         """
-        current_model   = self.load_model()
+        current_model   = self.load_model(model_name)
         sampler         = GWSampler(model = current_model)
         sampler.context = injection
         sampler.run_sampler(num_samples=num_samples, batch_size=1_000, isJoint = True)
@@ -578,7 +891,7 @@ class DINGO_pipeline(Pipeline_Amortized):
 
         #post-process
         if {"geocent_time_A", "delta_t_AB"}.issubset(samples.columns):
-            samples["geocent_time_B"] = samples["geocent_time_A"] + samples["delta_t_AB"]
+            samples["geocent_time_B"] = samples["geocent_time_A"] - samples["delta_t_AB"]
         #tests: Decide what to do with these
         pos_columns = ["mass_1_A","mass_1_B","mass_2_A","mass_2_B","delta_t_AB"]
         present_pos_columns = [  #filter those who are needed

@@ -1,0 +1,154 @@
+data:
+  waveform_dataset_path: Output/Dingo/data/waveform_dataset.hdf5
+  extrinsic_prior:
+    luminosity_distance_A: bilby.gw.prior.UniformSourceFrame(minimum=5000.0, maximum=20000.0,
+      name=luminosity_distance)
+    dec_A: bilby.core.prior.Cosine(name='dec_A')
+    ra_A: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='ra_A')
+    theta_jn_A: bilby.core.prior.Sine(name='theta_jn_A')
+    psi_A: bilby.core.prior.Uniform(minimum=0.0, maximum=3.141592653589793, name='psi_A')
+    phase_A: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='phase_A')
+    geocent_time_A: bilby.core.prior.Uniform(minimum=20.0, maximum=58.0, name='geocent_time_A')
+    luminosity_distance_B: bilby.gw.prior.UniformSourceFrame(minimum=5000.0, maximum=20000.0,
+      name=luminosity_distance)
+    dec_B: bilby.core.prior.Cosine(name='dec_B')
+    ra_B: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='ra_B')
+    theta_jn_B: bilby.core.prior.Sine(name='theta_jn_B')
+    psi_B: bilby.core.prior.Uniform(minimum=0.0, maximum=3.141592653589793, name='psi_B')
+    phase_B: bilby.core.prior.Uniform(minimum=0.0, maximum=6.283185307179586, name='phase_B')
+    delta_t_AB: bilby.core.prior.Uniform(minimum=0.0001, maximum=10.0, name='delta_t_AB')
+  domain_update:
+    f_min: 10.0
+    f_max: 1024.0
+  detectors:
+  - H1
+  - L1
+  inference_parameters:
+  - chirp_mass_A
+  - mass_ratio_A
+  - a_1_A
+  - a_2_A
+  - tilt_1_A
+  - tilt_2_A
+  - phi_12_A
+  - phi_jl_A
+  - luminosity_distance_A
+  - dec_A
+  - ra_A
+  - theta_jn_A
+  - psi_A
+  - phase_A
+  - geocent_time_A
+
+  # Signal B
+  - chirp_mass_B
+  - mass_ratio_B
+  - a_1_B
+  - a_2_B
+  - tilt_1_B
+  - tilt_2_B
+  - phi_12_B
+  - phi_jl_B
+  - luminosity_distance_B
+  - dec_B
+  - ra_B
+  - theta_jn_B
+  - psi_B
+  - phase_B
+  - delta_t_AB
+  context_parameters: []
+  ref_time: 0.0
+  train_fraction: 0.95
+model:
+  posterior_model_type: copula_normalizing_flow
+  posterior_kwargs:
+    context_dim: 128
+    block_dims:
+    - 15
+    - 15
+    flows:
+      flow_1:
+        num_flow_steps: 6
+        base_transform_kwargs:
+          hidden_dim: 64
+          num_transform_blocks: 4
+          activation: elu
+          dropout_probability: 0.0
+          batch_norm: true
+          num_bins: 16
+          base_transform_type: rq-coupling
+      flow_2:
+        num_flow_steps: 6
+        base_transform_kwargs:
+          hidden_dim: 64
+          num_transform_blocks: 4
+          activation: elu
+          dropout_probability: 0.0
+          batch_norm: true
+          num_bins: 16
+          base_transform_type: rq-coupling
+    CopulaKwargs:
+      P: 16
+      hidden_dims:
+      - 64
+      - 64
+      activation: elu
+      dropout: 0.0
+      batch_norm: false
+  embedding_kwargs:
+    output_dim: 128
+    hidden_dims:
+    - 1024
+    - 1024
+    - 512
+    - 512
+    activation: elu
+    dropout: 0.0
+    batch_norm: true
+    svd:
+      num_training_samples: 10000
+      num_validation_samples: 2000
+      size: 200
+training:
+  stage_0:
+    epochs: 100
+    asd_dataset_path: Output/Dingo/data/asd_dataset.hdf5
+    freeze_rb_layer: true
+    optimizer:
+      type: adam
+      lr: 0.0001
+    scheduler:
+      type: cosine
+      T_max: 500
+    early_stopping:
+      patience: 20
+      delta: 0.0
+      metric: validation
+    batch_size: 256
+  stage_1:
+    epochs: 400
+    asd_dataset_path: Output/Dingo/data/asd_dataset.hdf5
+    freeze_rb_layer: false
+    optimizer:
+      type: adam
+      lr: 5.0e-05
+    scheduler:
+      type: cosine
+      T_max: 500
+    batch_size: 256
+    early_stopping:
+      patience: 20
+      delta: 0.0
+      metric: validation
+
+local:
+  device: cuda
+  leave_waveforms_on_disk: true
+  num_workers: 10
+  runtime_limits:
+    max_time_per_run: 36000000
+    max_epochs_per_run: 500
+  checkpoint_epochs: 10
+  wandb:
+    project: dingo-copula
+    group: gaussian-mean-debug

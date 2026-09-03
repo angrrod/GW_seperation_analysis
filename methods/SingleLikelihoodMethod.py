@@ -2,11 +2,9 @@ import bilby
 from .Method import Method
 from scenario import GWScenario
 from bilby.gw.conversion import generate_posterior_samples_from_marginalized_likelihood
-from prior import prior
-from config import ScenarioConfig
 class SingleLikelihoodMethod(Method):
-    def __init__(self, scenario:GWScenario,logger,config,pipeline_type_code:str,nameExtra:str):
-        super().__init__(scenario, logger, config, pipeline_type_code)
+    def __init__(self, scenario:GWScenario,logger,pipeline_type_code:str,nameExtra:str):
+        super().__init__(scenario, logger, pipeline_type_code)
         self.nameExtra        = nameExtra #needed for getting the correct logging directories
         self._logl_diag_state = {"did_header": set()} # for logging purposes
         
@@ -25,7 +23,7 @@ class SingleLikelihoodMethod(Method):
         else:
             prior = self.prior
         
-        if self.scenario.config.UseRelBinning:
+        if self.configs["scenario"]["UseRelBinning"]:
             fiducial_parameters = self.scenario.injct_params_waves[0].copy()
             fiducial_parameters["time_jitter"] = 0.0
             likelihood = bilby.gw.likelihood.RelativeBinningGravitationalWaveTransient(  #GravitationalWaveTransient

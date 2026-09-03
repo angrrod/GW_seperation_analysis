@@ -9,8 +9,25 @@ from utils import getMaximumLikelihood
 import numpy as np
 import time
 import os
-from prior import prior
-from config import ScenarioConfig
+from prior import SamplerPrior
+from utils import load_config
+
+def _default_npool() -> int:
+    """
+    Pick a sensible worker pool size at runtime.
+    Priority:
+      1) GW_NPOOL (explicit override), needed to allow some CPU's for main process and not likelihood evals
+      2) SLURM_CPUS_PER_TASK (match Slurm allocation)
+      3) 18 default for local PC runs
+      4) 1 (safe fallback)
+    """
+    v = os.environ.get("GW_NPOOL") or os.environ.get("SLURM_CPUS_PER_TASK")
+    try:
+        n = int(v) if v is not None else 18  #here we run the normal one for HPC
+    except ValueError:
+        n = 1  #if error fall back to 1 to ensure runnability
+    print(f"using {max(1, n)} processes")
+    return max(1, n)
 
 class RunMode(Enum):
     RUN    = "run"
@@ -18,15 +35,15 @@ class RunMode(Enum):
     CHEKPT = "checkpoint"
     
 class Method(ABC):
-    def __init__(self,scenario:GWScenario,logger,config,pipeline_type_code:str):
+    def __init__(self,scenario:GWScenario,logger,pipeline_type_code:str):
         self.scenario           = scenario
         self.logger             = logger
-        self.config             = config
-        self.priorConstructor   = prior(logger,config,ScenarioConfig())
+        self.priorConstructor   = SamplerPrior(logger)
         self.prior              = self.getPrior()
         self.pipeline_type_code = pipeline_type_code
         self.wg_rel             = self._getRBWaveForm()
-
+        self.nbr_cores          = _default_npool()
+        self.configs            = load_config()
     
     def sample(self,resume,clean,ifos_override):
         #adapt the prior
@@ -45,12 +62,7 @@ class Method(ABC):
         #     seed_frac=0.05,        # 10% of live points near injection
         #     rel_jitter=1e-3        # jitter scale relative to prior width
         # )
-        if self.config.sampler == "dynesty": #delete
-            sample = self._dynestySample(resume,clean,likelihood)
-        elif self.config.sampler == "numpyro":
-            sample = self._NUTSSample(resume,clean,likelihood)
-        else:
-            raise NotImplementedError("sampling method not implemented")
+        sample = self._dynestySample(resume,clean,likelihood)
         results = self.updateResults(sample,likelihood)
         return results
     
@@ -58,44 +70,18 @@ class Method(ABC):
         sample = bilby.run_sampler(
             likelihood   = likelihood,
             priors       = self.prior,
-            sampler      = self.config.sampler,
-            nlive        = self.config.nlive, 
-            dlogz        = self.config.dlogz, #stopping criterion for the evidence
-            sample       = self.config.sample,  
-            walks        = self.config.walks, #steps for MCMC sampeler to select new candidates  
-            bound        = self.config.bound,
-            maxmcmc      = self.config.maxmcmc,
-            nact         = self.config.nact, #amount of steps is tuned so autocorr is small enough 
+            sampler      = "dynesty",
+            nlive        = self.configs["dynesty"]["nlive"], 
+            dlogz        = self.configs["dynesty"]["dlogz"], #stopping criterion for the evidence
+            sample       = self.configs["dynesty"]["sample"],  
+            bound        = self.configs["dynesty"]["bound"], 
             resume       = resume,
             clean        = clean,
-            # live_points= live_points, #TODO: DELETE
             outdir       = str(self.getSampleOutdir(self.nameExtra)),
             label        = self.pipeline_type_code,
-            npool        = self.config.cores,
-            queue_size   = self.config.cores,
+            npool        = self.nbr_cores,
+            queue_size   = self.nbr_cores,
             print_method = 'interval-60'
-        )
-        return sample
-    
-    def _NUTSSample(self,resume,clean,likelihood): #delete
-        sample = bilby.run_sampler(
-            likelihood         = likelihood,
-            priors             = self.prior,
-            sampler            = self.config.sampler,
-            sampler_name       = self.config.sampler_name,
-            num_warmup         = self.config.tune,     
-            num_samples        = self.config.draws,   
-            outdir             = str(self.getSampleOutdir(self.nameExtra)),
-            label              = self.pipeline_type_code,
-            resume             = resume,
-            clean              = clean,
-            # target_accept_prob = self.config.target_accept,
-            # max_tree_depth     = self.config.max_treedepth,
-            npool              = self.config.cores,
-            sampler_kwargs=dict(
-                target_acceptance = self.config.target_accept,
-                max_tree_depth    = self.config.max_treedepth,
-            ),
         )
         return sample
     

@@ -4,6 +4,9 @@ import corner
 import pandas as pd
 import numpy as np
 from scipy.stats import gaussian_kde,entropy
+import yaml
+from pathlib import Path
+from .paths import get_config_dir
 
 ### helper functions ###
 def createCornerPlot(samps,params,color,fig,truths):
@@ -237,3 +240,109 @@ def getMaximumLikelihood(result):
     idx_ml    = posterior["log_likelihood"].idxmax()
     ml_sample = posterior.loc[idx_ml]
     return ml_sample 
+
+def _merge_dicts(base: dict, new: dict, source: Path, path=""):
+    """Recursively merge `new` into `base`, rejecting conflicting values."""
+    for key, value in new.items():
+        key_path = f"{path}.{key}" if path else key
+
+        if key not in base:
+            base[key] = value
+            continue
+
+        if isinstance(base[key], dict) and isinstance(value, dict):
+            _merge_dicts(
+                base[key],
+                value,
+                source=source,
+                path=key_path,
+            )
+        elif base[key] != value:
+            raise ValueError(
+                f"Conflicting config value for '{key_path}' "
+                f"while reading {source}:\n"
+                f"  existing: {base[key]!r}\n"
+                f"  new:      {value!r}"
+            )
+
+def get_config_path(filename: str | Path) -> Path:
+    """
+    Resolve one YAML config file.
+
+    Relative paths are interpreted relative to get_config_dir().
+    Absolute paths are used unchanged.
+    """
+    path = Path(filename)
+    if not path.is_absolute():
+        path = get_config_dir() / path
+
+    path = path.resolve()
+
+    if not path.is_file():
+        raise FileNotFoundError(f"Config file does not exist: {path}")
+
+    if path.suffix.lower() not in {".yml", ".yaml"}:
+        raise ValueError(f"Config file must be YAML: {path}")
+
+    return path
+
+def load_config(
+    scenario: str | Path | None = None,
+    *filenames: str | Path,
+) -> dict:
+    """
+    Load project configuration.
+
+    Default:
+        Load all shared configuration files.
+
+    scenario:
+        Optionally add one scenario configuration.
+
+    filenames:
+        Optionally add specific extra YAML files.
+    """
+
+    SHARED_CONFIG_FILES = (
+        "waveform_dataset_settings.yml",
+        "asd_dataset_settings.yml",
+        "training_copula.yml",
+        "scenario_1_conf.yml",
+    )
+    
+    config_files = [
+        get_config_path(filename)
+        for filename in SHARED_CONFIG_FILES
+    ]
+
+    if scenario is not None:
+        config_files.append(
+            get_config_path(scenario)
+        )
+
+    config_files.extend(
+        get_config_path(filename)
+        for filename in filenames
+    )
+
+    config = {}
+
+    for path in config_files:
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
+
+        if data is None:
+            continue
+
+        if not isinstance(data, dict):
+            raise TypeError(
+                f"Config file {path} must contain a YAML mapping."
+            )
+
+        _merge_dicts(
+            config,
+            data,
+            source=path,
+        )
+
+    return config

@@ -5,20 +5,20 @@ from bilby.gw.detector.networks import TriangularInterferometer
 from gwpy.timeseries import TimeSeries
 import matplotlib.pyplot as plt
 from dataclasses import asdict
-from config import ScenarioConfig, DynestyConfig
 import os, json, datetime
 from pathlib import Path
 import h5py
 from dataclasses import asdict
-from utils import get_base_log_dir
-from prior import prior
+from utils import get_scenario_data_dir, load_config
+from prior import SamplerPrior
+
 class GWScenario:
-    def __init__(self, logger ,scenarioId, config : ScenarioConfig):
+    def __init__(self, logger ):
         self.logger             = logger
-        self.config             = config
-        self.workdir            = get_base_log_dir() / "scenarioData"
-        self.scenarioId         = scenarioId
-        self.prior              = prior(logger,DynestyConfig(),config)
+        self.configs            = load_config()
+        self.workdir            = get_scenario_data_dir()
+        self.scenarioId         = self.configs["scenario"]["scenarioId"]
+        self.prior              = SamplerPrior(logger)
             
         #set-up plotting dirs separate from post processing dir
         #parameters to be initialized during set_up:
@@ -33,8 +33,8 @@ class GWScenario:
         """
         self.logger.info("$$$ setting up scenario; generating overlapping waves")
         
-        PSD_CE = self.load_psd(self.config.ASD_file_name_CE +"_PSD.txt")
-        PSD_ET = self.load_psd(self.config.ASD_file_name_ET +"_PSD.txt")
+        PSD_CE = self.load_psd("cosmic_explorer_strain_PSD.txt")
+        PSD_ET = self.load_psd("ET_D_PSD.txt")  #Add ET
         
         self.ifos = self._getInterferrometerSetUp(PSD_ET,PSD_CE)
         
@@ -44,9 +44,9 @@ class GWScenario:
         else:
             # new scenario create gaussian noise
             self.ifos.set_strain_data_from_power_spectral_densities(
-                sampling_frequency = self.config.sampling_frequency,
-                duration           = self.config.duration,
-                start_time         = self.config.start_time
+                sampling_frequency = self.configs["dataset_settings"]["f_s"],
+                duration           = self.configs["dataset_settings"]["T"],
+                start_time         = 0.0
             )
             self.saveScenario()
         
@@ -58,16 +58,19 @@ class GWScenario:
         # BBH signal
         # waveform generator for normal likelihood model
         self.wg = bilby.gw.waveform_generator.WaveformGenerator(
-            duration                      = self.config.duration,
-            sampling_frequency            = self.config.sampling_frequency,
+            duration                      = self.configs["dataset_settings"]["T"],
+            sampling_frequency            = self.configs["dataset_settings"]["f_s"],
             frequency_domain_source_model = lal_binary_black_hole,
             parameter_conversion          = bilby.gw.conversion.convert_to_lal_binary_black_hole_parameters,
-            waveform_arguments            = {k: v for k, v in asdict(self.config).items() if k in {"waveform_approximant","minimum_frequency","reference_frequency"
-        }}  
+            waveform_arguments            = {
+                "waveform_approximant" : self.configs['waveform_generator']["approximant"],
+                "minimum_frequency"    : self.configs['waveform_generator']["f_ref"],
+                "reference_frequency"  : self.configs['domain']["f_min"]
+            }
         )
         
-        if self.config.generate_new_signal:
-            if self.config.ineject_random_sample:
+        if self.configs["scenario"]["generate_new_signal"]:
+            if self.configs["scenario"]["ineject_random_sample"]:
                 self.injct_params_waves = self._generateAcceptableSamples()
             else:  
                 self.injct_params_waves = self.prior.GetWaveFormParamsFixed()
@@ -134,8 +137,8 @@ class GWScenario:
         xarm_azimuth_deg = 0.0
         yarm_azimuth_deg = xarm_azimuth_deg + 60.0
 
-        f_min  = self.config.minimum_frequency
-        f_max  = self.config.sampling_frequency / 2
+        f_min  = self.configs["domain"]["f_min"]
+        f_max  = self.configs["dataset_settings"]["f_s"] / 2
         ifos_1 = TriangularInterferometer(
             name                   = "ET",
             minimum_frequency      = f_min,   # choose consistently with your waveform and PSD validity
@@ -182,7 +185,7 @@ class GWScenario:
         self.logger.info("$$$ getting time series objects")
         td = ifos[strainI].strain_data.time_domain_strain          # numpy array (length = duration * fs)
         t0 = ifos[strainI].strain_data.start_time                  # GPS start time (float)
-        fs = self.config.sampling_frequency
+        fs = self.configs["dataset_settings"]["f_s"]
 
         # Convert data
         ts       = TimeSeries(td, sample_rate=fs, epoch=t0)
@@ -369,7 +372,6 @@ class GWScenario:
         dir = self.getScenarioPath()
         self.logger.info(f"$$$ Save scenario to {dir}")
         
-        meta_config = asdict(self.config)
         meta_inj = getattr(self, "injct_params_waves", None)
         with h5py.File(str(dir), "w") as f:
             
@@ -377,8 +379,6 @@ class GWScenario:
             f.create_dataset("/meta/created_utc", data=np.bytes_(
                 datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z"
             ))
-            f.create_dataset("/meta/scenario_config_json",
-                            data=np.bytes_(json.dumps(meta_config)))
             f.create_dataset("/meta/injections_json",
                             data=np.bytes_(json.dumps(meta_inj)))
             
@@ -435,7 +435,7 @@ class GWScenario:
 
                 ifo.strain_data.set_from_time_domain_strain(
                     time_domain_strain = np.asarray(g["strain_td"], dtype=np.float64),
-                    sampling_frequency = self.config.sampling_frequency,
-                    duration           = self.config.duration,
-                    start_time         = self.config.start_time,
+                    sampling_frequency = self.configs["dataset_settings"]["f_s"],
+                    duration           = self.configs["dataset_settings"]["T"],
+                    start_time         = 0.0,
                 )
