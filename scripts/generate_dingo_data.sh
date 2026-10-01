@@ -7,7 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=36
 
-#SBATCH --time=20:00:00
+#SBATCH --time=48:00:00
 #SBATCH --output=HPC_output_logs/TestJob_%j.out
 #SBATCH --error=HPC_output_logs/TestJob_%j.err
 
@@ -35,5 +35,13 @@ echo "TMPDIR=$TMPDIR"
 echo "GW_LOCAL_CACHE=$GW_LOCAL_CACHE"
 df -h "$TMPDIR"
 
+PROJECT_DIR="/vsc-hard-mounts/leuven-user/371/vsc37106/GW_separation"
+
+cd "$PROJECT_DIR" || exit 1
+
+export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
+
+cd "$VSC_DATA/GW_separation"
+
 # Run the Python script using srun and pass the parameters explicitly
-srun python /vsc-hard-mounts/leuven-user/371/vsc37106/GW_separation/generate_dingo_data.py
+srun python "$PROJECT_DIR/scripts/generate_dingo_data.py" 

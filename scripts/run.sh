@@ -22,7 +22,13 @@ conda activate "$VSC_DATA/GW_separation/GW_env"
 export GW_NPOOL=16  
 export GW_INP_DIR="$VSC_DATA/GW_separation"
 
+PROJECT_DIR="/vsc-hard-mounts/leuven-user/371/vsc37106/GW_separation"
+
+cd "$PROJECT_DIR" || exit 1
+
+export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
+
 cd "$VSC_DATA/GW_separation"
 
 # Run the Python script using srun and pass the parameters explicitly
-srun python /vsc-hard-mounts/leuven-user/371/vsc37106/GW_separation/main.py "$@"
+srun python "$PROJECT_DIR/scripts/main.py" "$@"

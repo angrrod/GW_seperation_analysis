@@ -1,10 +1,9 @@
 from Pipeline import DINGO_pipeline
-from setUpLoggerScenario import setUpLoggerScenario
+from scenario.setUpLoggerScenario import setUpLoggerScenario
 import os
 
 def Main():
     print('test')
-    model_name = "best_model.pt"
     scenario, logger, _, _ = setUpLoggerScenario()
 
     # If setUpLoggerScenario does not already call this, uncomment:

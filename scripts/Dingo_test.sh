@@ -37,5 +37,13 @@ echo "TMPDIR=$TMPDIR"
 echo "GW_LOCAL_CACHE=$GW_LOCAL_CACHE"
 df -h "$TMPDIR"
 
+PROJECT_DIR="/vsc-hard-mounts/leuven-user/371/vsc37106/GW_separation"
+
+cd "$PROJECT_DIR" || exit 1
+
+export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
+
+cd "$VSC_DATA/GW_separation"
+
 # Run the Python script using srun and pass the parameters explicitly
-srun python /vsc-hard-mounts/leuven-user/371/vsc37106/GW_separation/Debug_dingo.py
+srun python "$PROJECT_DIR/scripts/Debug_dingo.py"

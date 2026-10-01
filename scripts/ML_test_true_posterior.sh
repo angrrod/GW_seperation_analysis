@@ -34,7 +34,13 @@ mkdir -p "$GW_DATA_DIR" "$WANDB_DIR"
 # Default: sync metrics to W&B during the job.
 export WANDB_MODE="online"
 
+PROJECT_DIR="/vsc-hard-mounts/leuven-user/371/vsc37106/GW_separation"
+
+cd "$PROJECT_DIR" || exit 1
+
+export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
+
 cd "$VSC_DATA/GW_separation"
 
 # Run the Python script using srun and pass the parameters explicitly
-srun python /vsc-hard-mounts/leuven-user/371/vsc37106/GW_separation/ML_Test_true_posterior.py
+srun python "$PROJECT_DIR/scripts/ML_Test_true_posterior.py" 
