@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=TestJob
+#SBATCH --job-name=GW_main
 #SBATCH --account=lp_biolearning
 #SBATCH --clusters=wice            # <-- run on wICE
 #SBATCH --partition=batch_icelake  # optional but recommended (adjust if you use another partition)
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=18
+#SBATCH --cpus-per-task=17
 #SBATCH --time=72:00:00
 #SBATCH --output=HPC_output_logs/TestJob_%j.out
 #SBATCH --error=HPC_output_logs/TestJob_%j.err
@@ -21,6 +21,11 @@ conda activate "$VSC_DATA/GW_separation/GW_env"
 #lower than cpu per tasks
 export GW_NPOOL=16  
 export GW_INP_DIR="$VSC_DATA/GW_separation"
+
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
 
 PROJECT_DIR="/vsc-hard-mounts/leuven-user/371/vsc37106/GW_separation"
 

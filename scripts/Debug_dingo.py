@@ -1,3 +1,209 @@
+import os
+import sys
+import csv
+import time
+import signal
+import subprocess
+from pathlib import Path
+from contextlib import contextmanager
+import argparse
+
+def _monitor_cpu(root_pid, output_dir, job_id, interval=2.0):
+    """
+    Monitor CPU activity of the training process and its children.
+
+    Runs in a separate process so PyTorch DataLoader workers
+    are not affected by an additional monitoring thread.
+    """
+    import psutil
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    process_file = output_dir / f"cpu_{job_id}_processes.csv"
+    summary_file = output_dir / f"cpu_{job_id}_summary.csv"
+
+    root = psutil.Process(root_pid)
+
+    stopped = False
+
+    def stop_monitor(*args):
+        nonlocal stopped
+        stopped = True
+
+    signal.signal(signal.SIGTERM, stop_monitor)
+    signal.signal(signal.SIGINT, stop_monitor)
+
+    previous = {}
+    previous_time = None
+    start_time = time.monotonic()
+
+    with open(process_file, "w", newline="") as pf, \
+         open(summary_file, "w", newline="") as sf:
+
+        process_writer = csv.writer(pf)
+        summary_writer = csv.writer(sf)
+
+        process_writer.writerow([
+            "elapsed_s",
+            "pid",
+            "role",
+            "status",
+            "cpu_cores",
+            "threads",
+            "rss_mb",
+            "read_MB_per_s",
+            "voluntary_ctx_per_s",
+            "involuntary_ctx_per_s",
+        ])
+
+        summary_writer.writerow([
+            "elapsed_s",
+            "total_cpu_cores",
+            "main_cpu_cores",
+            "worker_cpu_cores",
+            "num_workers",
+            "num_running",
+            "num_sleeping",
+            "max_worker_cpu",
+        ])
+
+        while not stopped:
+            try:
+                processes = [root] + root.children(recursive=True)
+            except psutil.Error:
+                break
+
+            now = time.monotonic()
+            elapsed = now - start_time
+
+            dt = (
+                now - previous_time
+                if previous_time is not None else None
+            )
+
+            current = {}
+            measurements = []
+
+            for p in processes:
+
+                # Exclude the monitoring process itself
+                if p.pid == os.getpid():
+                    continue
+
+                try:
+                    with p.oneshot():
+                        cpu = p.cpu_times()
+                        ctx = p.num_ctx_switches()
+                        memory = p.memory_info()
+                        status = p.status()
+                        threads = p.num_threads()
+
+                        try:
+                            read_bytes = p.io_counters().read_bytes
+                        except (psutil.Error, NotImplementedError):
+                            read_bytes = None
+
+                        key = (p.pid, p.create_time())
+
+                        current[key] = {
+                            "cpu": cpu.user + cpu.system,
+                            "read": read_bytes,
+                            "voluntary": ctx.voluntary,
+                            "involuntary": ctx.involuntary,
+                        }
+
+                    old = previous.get(key)
+
+                    if old is None or dt is None or dt <= 0:
+                        continue
+
+                    def rate(name):
+                        new = current[key][name]
+                        before = old[name]
+
+                        if new is None or before is None:
+                            return None
+
+                        return max(0.0, (new - before) / dt)
+
+                    cpu_cores = rate("cpu")
+                    read_rate = rate("read")
+
+                    role = "main" if p.pid == root_pid else "worker"
+
+                    measurements.append({
+                        "pid": p.pid,
+                        "role": role,
+                        "status": status,
+                        "cpu": cpu_cores,
+                        "threads": threads,
+                        "rss": memory.rss / 1e6,
+                    })
+
+                    process_writer.writerow([
+                        elapsed,
+                        p.pid,
+                        role,
+                        status,
+                        cpu_cores,
+                        threads,
+                        memory.rss / 1e6,
+                        read_rate / 1e6 if read_rate is not None else "",
+                        rate("voluntary"),
+                        rate("involuntary"),
+                    ])
+
+                except psutil.Error:
+                    continue
+
+            if measurements:
+                main = [
+                    x for x in measurements
+                    if x["role"] == "main"
+                ]
+
+                workers = [
+                    x for x in measurements
+                    if x["role"] == "worker"
+                ]
+
+                main_cpu = sum(x["cpu"] for x in main)
+                worker_cpu = sum(x["cpu"] for x in workers)
+
+                summary_writer.writerow([
+                    elapsed,
+                    main_cpu + worker_cpu,
+                    main_cpu,
+                    worker_cpu,
+                    len(workers),
+                    sum(x["status"] == "running" for x in workers),
+                    sum(x["status"] == "sleeping" for x in workers),
+                    max((x["cpu"] for x in workers), default=0),
+                ])
+
+                pf.flush()
+                sf.flush()
+
+            previous = current
+            previous_time = now
+
+            time.sleep(interval)
+
+
+# IMPORTANT: run the monitor before importing DINGO or PyTorch.
+if (
+    __name__ == "__main__"
+    and len(sys.argv) == 6
+    and sys.argv[1] == "--cpu-monitor"
+):
+    _monitor_cpu(
+        root_pid=int(sys.argv[2]),
+        output_dir=sys.argv[3],
+        job_id=sys.argv[4],
+        interval=float(sys.argv[5]),
+    )
+    sys.exit(0)
 from Pipeline import DINGO_pipeline
 from scenario.setUpLoggerScenario import setUpLoggerScenario
 import corner
@@ -13,12 +219,48 @@ from sklearn.cluster import KMeans
 ###########################
 ###   Run Debug Code    ###
 ###########################
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="DINGO training and inference pipeline"
+    )
 
-TRAIN                 = True
-INFER                 = True
-PLOT                  = True
-DIAGNOSE_IO           = False
-NUM_SAMPLES_TO_PLOT   = 20000
+    parser.add_argument(
+        "--train",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+
+    parser.add_argument(
+        "--infer",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+
+    parser.add_argument(
+        "--plot",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+
+    parser.add_argument(
+        "--train-full",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+
+    parser.add_argument(
+        "--diagnose-io",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+
+    parser.add_argument(
+        "--num-samples-to-plot",
+        type=int,
+        default=20000,
+    )
+
+    return parser.parse_args()
 
 def diagnose_dingo_io(
     DP,
@@ -450,7 +692,7 @@ def branch_table(samples):
         colnames=["B branch"],
     )
 
-def Main():
+def Main(args):
     print('test')
     model_name = "best_model.pt"
     scenario, logger, _, _ = setUpLoggerScenario()
@@ -458,7 +700,7 @@ def Main():
     # If setUpLoggerScenario does not already call this, uncomment:
     # scenario.setUpScenario()
 
-    DP = DINGO_pipeline(logger, scenario, generateData = False)
+    DP = DINGO_pipeline(logger, scenario, generateData = False,train_full = args.train_full)
 
     # ----------------------------------------------------
     # Optional node-local dataset cache.
@@ -508,7 +750,7 @@ def Main():
         ),
     )
 
-    if DIAGNOSE_IO:
+    if args.diagnose_io:
         diagnose_dingo_io(
             DP,
             batch_size=64,
@@ -531,15 +773,16 @@ def Main():
     # print("\nAfter copula training")
     # print(branch_table(posterior_samples_1))
     
-    if TRAIN:
+    if args.train:
         logger.info("$$$ training DINGO pipeline")
-        DP.train()
+        with profile_cpu(DP.train_dir):
+            DP.train()
 
-    if INFER:
+    if args.infer:
         logger.info("$$$ running DINGO inference on initialized scenario")
 
         samples = DP.infer_from_strain(
-            num_samples=NUM_SAMPLES_TO_PLOT,
+            num_samples=args.num_samples_to_plot,
             model_name=model_name
         )
         
@@ -551,7 +794,7 @@ def Main():
             "q in (0, 1], mass_1 >= mass_2, and positive geocent-time ordering."
         )
         
-        if PLOT:
+        if args.plot:
             truth_parameters = {}
 
             for suffix, params in zip(["_A", "_B"], DP.scenario.injct_params_waves):
@@ -568,6 +811,62 @@ def Main():
             logger.info(f"$$$ wrote corner plot to {corner_path}")
 
 if __name__ == "__main__":
+    @contextmanager
+    def profile_cpu(train_dir):
 
-    Main()
+        enabled = os.environ.get("GW_PROFILE_CPU", "1") == "1"
+
+        if not enabled:
+            yield
+            return
+
+        interval = float(
+            os.environ.get("GW_CPU_PROFILE_INTERVAL", "2")
+        )
+
+        if interval <= 0:
+            raise ValueError("CPU profiling interval must be positive")
+
+        job_id = os.environ.get("SLURM_JOB_ID", str(os.getpid()))
+
+        output_dir = Path(
+            os.environ.get(
+                "GW_CPU_PROFILE_DIR",
+                os.environ.get("SLURM_SUBMIT_DIR", str(train_dir))
+            )
+        ).resolve()
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        command = [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--cpu-monitor",
+            str(os.getpid()),
+            str(output_dir),
+            str(job_id),
+            str(interval),
+        ]
+
+        monitor = subprocess.Popen(command)
+
+        print(f"CPU profiler started: {output_dir}", flush=True)
+
+        try:
+            yield
+
+        finally:
+            if monitor.poll() is None:
+                monitor.terminate()
+
+                try:
+                    monitor.wait(timeout=interval + 5)
+                except subprocess.TimeoutExpired:
+                    monitor.kill()
+                    monitor.wait()
+
+            print("CPU profiler stopped", flush=True)
+    
+    args = parse_args()
+    Main(args)
     print("End")

@@ -328,10 +328,10 @@ def _empirical_tail_dependence(
 def Main(useJoint = True,onlyCorr = True):
     #build scenario
     scenario,logger,plot_dir,data_dir = setUpLoggerScenario()
-    data_dir = data_dir/ "results_joint_final.hdf5"
+    data_dir = data_dir/ "results_joint_close.hdf5"  #results_joint_close results_joint_final
     results = utils.exctractResults(data_dir,logger)
     
-    parameter_name = 'mass_ratio'#'mass_ratio' #dec luminosity_distance chirp_mass geocent_time phase
+    # parameter_name = 'mass_ratio'#'mass_ratio' #dec luminosity_distance chirp_mass geocent_time phase
     posteriors = results['joint_likl']['posteriors']
     for parameter_name in ['mass_ratio', 'dec', 'luminosity_distance', 'chirp_mass', 'geocent_time', 'phase']:
         fig_cor = plot_joint_parameter_corner(posteriors = posteriors,parameter = parameter_name,copula_space = None)

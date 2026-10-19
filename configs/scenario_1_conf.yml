@@ -11,7 +11,7 @@ prior_controls:
   use_deltas: false
 
 dynesty:
-  nlive: 2000
-  dlogz: 0.05
+  nlive: 20000
+  dlogz: 0.1
   sample: rslice
   bound: multi

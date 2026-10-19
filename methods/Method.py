@@ -81,6 +81,12 @@ class Method(ABC):
             label        = self.pipeline_type_code,
             npool        = self.nbr_cores,
             queue_size   = self.nbr_cores,
+            
+            # checkpointing
+            check_point=True,
+            check_point_plot=True,
+            check_point_delta_t=3600,
+            
             print_method = 'interval-60'
         )
         return sample

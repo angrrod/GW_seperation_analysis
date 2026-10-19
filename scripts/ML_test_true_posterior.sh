@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=TestJob
+#SBATCH --job-name=ML_test
 #SBATCH --account=lp_biolearning
 #SBATCH --clusters=genius            # <-- run on wice
 #SBATCH --partition=gpu_v100 

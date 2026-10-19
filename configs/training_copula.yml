@@ -124,7 +124,7 @@ training:
       patience: 20
       delta: 0.0
       metric: validation
-    batch_size: 256
+    batch_size: 512
   stage_1:
     epochs: 400
     asd_dataset_path: Output/Dingo/data/asd_dataset.hdf5
@@ -135,7 +135,7 @@ training:
     scheduler:
       type: cosine
       T_max: 500
-    batch_size: 256
+    batch_size: 512
     early_stopping:
       patience: 20
       delta: 0.0
@@ -143,8 +143,8 @@ training:
 
 local:
   device: cuda
-  leave_waveforms_on_disk: true
-  num_workers: 10
+  leave_waveforms_on_disk: false
+  num_workers: 16
   runtime_limits:
     max_time_per_run: 36000000
     max_epochs_per_run: 500

@@ -20,13 +20,15 @@ from dingo.gw.dataset.generate_dataset import _generate_dataset_main
 # from dingo.core.posterior_models.vector_copula_Model import vector_copula_Model
 from dingo.core.posterior_models.vector_copula_Model import CopulaNormalizingFlowModel
 from dingo.gw.inference.gw_samplers import GWSampler
-
-from utils.paths import get_config_dir, get_dingo_dir_data
+from threadpoolctl import threadpool_limits
+from utils.paths import get_config_dir, get_dingo_dir_data, get_cosmic_explorer_psd_path,get_waveform_dataset_path, get_asd_dataset_path
 from utils.utils import load_config
 from copy import deepcopy
 from numbers import Number
 import wandb
-
+from dingo.core.posterior_models.normalizing_flow import (
+    NormalizingFlowPosteriorModel
+)
 
 WATCHED_TIME_PARAMETERS = {
     "delta_t_AB",
@@ -44,7 +46,6 @@ WATCHED_TIME_PARAMETERS = {
     "mass_1_B",
     "mass_2_B",
 }
-
 
 def _collect_watched_scalars(
     obj,
@@ -149,17 +150,27 @@ def add_derived_params_to_df(samples):
     return samples
 
 class DINGO_pipeline(Pipeline_Amortized):
-    def __init__(self, logger, scenario:GWScenario, generateData:bool, nbr_cores:int = 1):
+    def __init__(self, logger, scenario:GWScenario, generateData:bool, nbr_cores:int = 1, train_full = False):
         super().__init__(logger, scenario)
-        self.nbr_cores    = nbr_cores
+        self.nbr_cores  = nbr_cores  #used for waveform generation
+        self.train_full = train_full
+        
         # set up YML's so that scenario is correctly translated to bilby
         # self.pipeline_type = Pipeline_type.DINGO
-        self.train_dir = get_dingo_dir_data() / "training_run"
+        self.train_dir = get_dingo_dir_data() / (
+            "training_full" if train_full else "training_copula"
+        )
         os.makedirs(self.train_dir, exist_ok=True)
         self.waveform_settings = load_config("waveform_dataset_settings.yml")
         self.asd_settings = load_config("asd_dataset_settings.yml")
-        self.train_settings = load_config("training_copula.yml")
+        if self.train_full:
+            self.train_settings = load_config("training_full.yml")
+        else:
+            self.train_settings = load_config("training_copula.yml")
         
+        #update dataset pointers depending on context
+        self._set_asd_config_paths()
+        self._set_training_dataset_paths()
         # Dingo treats `local` separately from the training settings. Work on a
         # private copy so that configuration dictionaries are never mutated.
         self.train_settings = deepcopy(self.train_settings)
@@ -208,7 +219,87 @@ class DINGO_pipeline(Pipeline_Amortized):
             
         self.model = None
         self.waveform_dataset = None
+    
+    def _set_asd_config_paths(self):
+        """
+        Replace machine-specific ASD/PSD paths in the loaded config
+        with the canonical path for the current environment.
+        """
 
+        psd_path = get_cosmic_explorer_psd_path()
+
+        if not psd_path.exists():
+            raise FileNotFoundError(
+                f"Cosmic Explorer PSD file does not exist: {psd_path}"
+            )
+
+        detectors = (
+            self.asd_settings
+            .get("dataset_settings", {})
+            .get("detectors", [])
+        )
+
+        if not detectors:
+            raise ValueError(
+                "ASD configuration does not define any detectors."
+            )
+
+        asds = self.asd_settings.setdefault("asds", {})
+
+        for detector in detectors:
+            asds[detector] = str(psd_path)
+
+        self.logger.info(
+            f"$$$ using Cosmic Explorer PSD: {psd_path}"
+        )
+    
+    def _set_training_dataset_paths(self):
+        """
+        Replace machine-specific dataset paths in the Dingo training
+        configuration with canonical paths for the current environment.
+        """
+
+        waveform_path = get_waveform_dataset_path()
+        asd_path      = get_asd_dataset_path()
+
+
+        # ---------------------------------------------------------
+        # Waveform dataset
+        # ---------------------------------------------------------
+        data_settings = self.train_settings.setdefault(
+            "data",
+            {},
+        )
+
+        data_settings[
+            "waveform_dataset_path"
+        ] = str(waveform_path)
+
+        # ---------------------------------------------------------
+        # ASD dataset used by every training stage
+        # ---------------------------------------------------------
+        training_settings = self.train_settings.get(
+            "training",
+            {},
+        )
+
+        for stage_name, stage_settings in (
+            training_settings.items()
+        ):
+            stage_settings[
+                "asd_dataset_path"
+            ] = str(asd_path)
+
+        self.logger.info(
+            "$$$ Dingo waveform dataset: "
+            f"{waveform_path}"
+        )
+
+        self.logger.info(
+            "$$$ Dingo ASD dataset: "
+            f"{asd_path}"
+        )
+    
     def run_cmd(self, cmd):
         cmd = [str(c) for c in cmd]
         self.logger.info("$$$ running: " + " ".join(cmd))
@@ -815,12 +906,13 @@ class DINGO_pipeline(Pipeline_Amortized):
         # )
 
 
-        complete = train_stages(
-            pm=self.model,
-            wfd=self.waveform_dataset,
-            train_dir=str(self.train_dir),
-            local_settings=self.local_settings,
-        )
+        with threadpool_limits(limits=1, user_api="blas"):
+            complete = train_stages(
+                pm=self.model,
+                wfd=self.waveform_dataset,
+                train_dir=str(self.train_dir),
+                local_settings=self.local_settings,
+            )
         return complete
 
     def build_context_from_initialized_scenario(
@@ -859,11 +951,18 @@ class DINGO_pipeline(Pipeline_Amortized):
         latest_model_path = self.train_dir / model_name
         device            = self.local_settings.get("device", "cpu")
         
-        self.model = CopulaNormalizingFlowModel(
-            device             = device,
-            model_filename     = str(latest_model_path),
-            load_training_info = False,
-        )
+        if self.train_full:
+            self.model = self.model = NormalizingFlowPosteriorModel(
+                device=device,
+                model_filename=str(latest_model_path),
+                load_training_info=False,
+            )
+        else:
+            self.model = CopulaNormalizingFlowModel(
+                device             = device,
+                model_filename     = str(latest_model_path),
+                load_training_info = False,
+            )
         self.logger.info(f"$$$ loaded DINGO vector_copula_Model: {latest_model_path}")
         return self.model
 

@@ -35,7 +35,7 @@ class JointLikelihoodlMethod(Method):
             priors             = self.prior,
             reference_frame    = "sky",
             time_reference     = "geocenter",
-            delta              = 0.001,  # RB binning tolerance
+            delta              = 0.01,  # RB binning tolerance
         )
         
         _base_log_likelihood_ratio = likelihood.log_likelihood_ratio

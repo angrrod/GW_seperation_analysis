@@ -60,9 +60,9 @@ extrinsic_prior:
   psi_B: 0.0
   phase_B: 0.0
   delta_t_AB: 0.0
-num_samples: 5000000
+num_samples: 200000
 compression:
   svd:
-    size: 500
+    size: 1000
     num_training_samples: 50000
     num_validation_samples: 10000
