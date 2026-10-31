@@ -62,25 +62,25 @@ data:
 model:
   posterior_model_type: normalizing_flow
   posterior_kwargs:
-    num_flow_steps: 12
+    num_flow_steps: 30
     base_transform_kwargs:
-      hidden_dim: 128
-      num_transform_blocks: 4
+      hidden_dim: 1024
+      num_transform_blocks: 5
       activation: elu
       dropout_probability: 0.0
-      batch_norm: true
-      num_bins: 16
+      norm: BatchNorm
+      num_bins: 8
       base_transform_type: rq-coupling
   embedding_kwargs:
     output_dim: 128
-    hidden_dims:
-    - 1024
-    - 1024
-    - 512
-    - 512
+    # Match the dense embedding in examples/npe_model/train_settings.yaml.
+    hidden_dims: [1024, 1024, 1024, 1024, 1024, 1024,
+                  512, 512, 512, 512, 512, 512,
+                  256, 256, 256, 256, 256, 256,
+                  128, 128, 128, 128, 128, 128]
     activation: elu
     dropout: 0.0
-    batch_norm: true
+    norm: BatchNorm
     svd:
       num_training_samples: 10000
       num_validation_samples: 2000
@@ -118,6 +118,7 @@ training:
       metric: validation
 
 local:
+  preprocessing_device: cuda
   device: cuda
   leave_waveforms_on_disk: false
   num_workers: 16

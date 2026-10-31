@@ -46,6 +46,7 @@ WATCHED_TIME_PARAMETERS = {
     "mass_1_B",
     "mass_2_B",
 }
+BLAS_THREADS = int(os.environ.get("GW_BLAS_THREADS", "1"))
 
 def _collect_watched_scalars(
     obj,
@@ -906,7 +907,7 @@ class DINGO_pipeline(Pipeline_Amortized):
         # )
 
 
-        with threadpool_limits(limits=1, user_api="blas"):
+        with threadpool_limits(limits=BLAS_THREADS, user_api="blas"):
             complete = train_stages(
                 pm=self.model,
                 wfd=self.waveform_dataset,

@@ -219,6 +219,135 @@ from sklearn.cluster import KMeans
 ###########################
 ###   Run Debug Code    ###
 ###########################
+
+def benchmark_svd(DP):
+    import time
+    import numpy as np
+    from threadpoolctl import threadpool_info, threadpool_limits
+
+    t0 = time.perf_counter()
+
+    DP.prepare_training()
+
+    print(
+        f"Preparation completed in "
+        f"{time.perf_counter() - t0:.2f} seconds",
+        flush=True,
+    )
+
+    wfd = DP.waveform_dataset
+
+    # Find the SVD decompression transform.
+    transform = wfd.decompression_transform
+
+    svd_transform = next(
+        t for t in transform.transforms
+        if hasattr(t, "svd_basis") and t.inverse
+    )
+
+    Vh = svd_transform.svd_basis.Vh
+
+    # Fetch real compressed waveform coefficients.
+    names = (
+        "h_plus_A",
+        "h_cross_A",
+        "h_plus_B",
+        "h_cross_B",
+    )
+    
+    benchmark_batch_size = 128
+
+    if wfd.polarizations is not None:
+        coeffs = [
+            np.ascontiguousarray(wfd.polarizations[n][:benchmark_batch_size])
+            for n in names
+        ]
+    else:
+        import h5py
+
+        with h5py.File(wfd.file_name, "r") as f:
+            coeffs = [
+                np.ascontiguousarray(f["polarizations"][n][:benchmark_batch_size])
+                for n in names
+            ]
+
+    print("\n=== ARRAY INFORMATION ===", flush=True)
+    print("Vh:", Vh.shape, Vh.dtype, flush=True)
+
+    for name, c in zip(names, coeffs):
+        print(name, c.shape, c.dtype, flush=True)
+
+    # Warm up the BLAS library.
+    _ = coeffs[0][:1] @ Vh
+
+    print("\n=== BLAS CONFIGURATION ===", flush=True)
+
+    for pool in threadpool_info():
+        print({
+            "backend": pool.get("internal_api"),
+            "num_threads": pool.get("num_threads"),
+            "filepath": pool.get("filepath"),
+        }, flush=True)
+
+    # A2: four individual matrix multiplications.
+    print("\n=== A2: SEPARATE MULTIPLICATIONS ===", flush=True)
+
+    for nthreads in (1, 2, 4):
+        times = []
+
+        with threadpool_limits(limits=nthreads, user_api="blas"):
+            for _ in range(3):
+                t0 = time.perf_counter()
+
+                outputs = [c @ Vh for c in coeffs]
+
+                elapsed = time.perf_counter() - t0
+                times.append(elapsed)
+                del outputs
+
+        print(
+            f"{nthreads} BLAS threads: "
+            f"median {np.median(times):.3f} s",
+            flush=True,
+        )
+
+    # A3: combine all four arrays into one multiplication.
+    print("\n=== A3: PACKED MULTIPLICATION ===", flush=True)
+
+    packed = np.concatenate(coeffs, axis=0)
+    times = []
+
+    with threadpool_limits(limits=1, user_api="blas"):
+        for _ in range(3):
+            t0 = time.perf_counter()
+
+            output = packed @ Vh
+
+            elapsed = time.perf_counter() - t0
+            times.append(elapsed)
+
+            # Verify against the original operation.
+            if len(times) == 1:
+                reference = coeffs[0][:1] @ Vh
+                print(
+                    "Numerically equivalent:",
+                    np.allclose(
+                        output[:1],
+                        reference,
+                        rtol=1e-4,
+                        atol=1e-5,
+                    ),
+                    flush=True,
+                )
+
+            del output
+
+    print(
+        f"Packed multiplication: "
+        f"median {np.median(times):.3f} s",
+        flush=True,
+    )
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="DINGO training and inference pipeline"
@@ -753,9 +882,12 @@ def Main(args):
     if args.diagnose_io:
         diagnose_dingo_io(
             DP,
-            batch_size=64,
+            batch_size=32,
             repeats=2,
         )
+        return
+    if os.environ.get("GW_BENCH_SVD", "0") == "1":
+        benchmark_svd(DP)
         return
     #test for label switching
     # logger.info("$$$ begin Testing DINGO pipeline") 
