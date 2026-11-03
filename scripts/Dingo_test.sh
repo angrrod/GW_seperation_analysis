@@ -26,8 +26,8 @@ conda activate "$VSC_DATA/GW_separation/GW_env"
 export GW_INP_DIR="$VSC_DATA/GW_separation"
 export GW_DATA_DIR="$VSC_SCRATCH/GW_separation/data"
 
-# Opt-in PyTorch CPU/CUDA timeline; enable with sbatch --export=ALL,GW_PROFILE_GPU=1.
-export GW_PROFILE_GPU="${GW_PROFILE_GPU:-0}"
+# Capture one PyTorch CPU/CUDA window; disable with --export=ALL,GW_PROFILE_GPU=0.
+export GW_PROFILE_GPU="${GW_PROFILE_GPU:-1}"
 export GW_GPU_PROFILE_DIR="${GW_GPU_PROFILE_DIR:-$VSC_SCRATCH/GW_separation/gpu_profiles/$SLURM_JOB_ID}"
 export GW_GPU_PROFILE_WAIT="${GW_GPU_PROFILE_WAIT:-20}"
 

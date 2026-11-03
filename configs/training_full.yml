@@ -84,7 +84,7 @@ model:
     svd:
       num_training_samples: 10000
       num_validation_samples: 2000
-      size: 200
+      size: 800
 training:
   stage_0:
     epochs: 100
@@ -93,6 +93,7 @@ training:
     optimizer:
       type: adam
       lr: 0.0001
+      fused: true
     scheduler:
       type: cosine
       T_max: 500
@@ -100,7 +101,7 @@ training:
       patience: 20
       delta: 0.0
       metric: validation
-    batch_size: 512
+    batch_size: 2048
   stage_1:
     epochs: 400
     asd_dataset_path: Output/Dingo/data/asd_dataset.hdf5
@@ -108,16 +109,19 @@ training:
     optimizer:
       type: adam
       lr: 5.0e-05
+      fused: true
     scheduler:
       type: cosine
       T_max: 500
-    batch_size: 512
+    batch_size: 2048
     early_stopping:
       patience: 20
       delta: 0.0
       metric: validation
 
 local:
+  # Allow accelerated internal float32 matrix multiplication on Tensor Cores.
+  float32_matmul_precision: high
   preprocessing_device: cuda
   device: cuda
   leave_waveforms_on_disk: false

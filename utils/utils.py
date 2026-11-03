@@ -294,36 +294,48 @@ def load_config(
     Load project configuration.
 
     Default:
-        Load all shared configuration files.
+        Load all shared configuration files, using training_copula.yml.
 
     scenario:
         Optionally add one scenario configuration.
 
     filenames:
         Optionally add specific extra YAML files.
+
+    Passing training_full.yml or training_copula.yml explicitly selects that
+    training configuration instead of merging it with the default. Other
+    shared settings are still loaded, and conflicting values remain errors.
     """
 
-    SHARED_CONFIG_FILES = (
+    requested_files = [
+        get_config_path(filename)
+        for filename in (scenario, *filenames)
+        if filename is not None
+    ]
+    training_files = {
+        path for path in requested_files
+        if path.stem in {"training_copula", "training_full"}
+    }
+    if len(training_files) > 1:
+        raise ValueError(
+            "Select only one training configuration: "
+            "training_copula.yml or training_full.yml."
+        )
+
+    SHARED_CONFIG_FILES = [
         "waveform_dataset_settings.yml",
         "asd_dataset_settings.yml",
-        "training_copula.yml",
         "scenario_1_conf.yml",
-    )
+    ]
+    if not training_files:
+        SHARED_CONFIG_FILES.insert(2, "training_copula.yml")
     
     config_files = [
         get_config_path(filename)
         for filename in SHARED_CONFIG_FILES
     ]
 
-    if scenario is not None:
-        config_files.append(
-            get_config_path(scenario)
-        )
-
-    config_files.extend(
-        get_config_path(filename)
-        for filename in filenames
-    )
+    config_files.extend(requested_files)
 
     config = {}
 

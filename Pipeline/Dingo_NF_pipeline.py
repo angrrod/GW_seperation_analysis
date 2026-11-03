@@ -12,6 +12,7 @@ from dingo.gw.training.train_pipeline import (
     prepare_training_resume,
     train_stages,
 )
+from dingo.core.utils.torchutils import set_float32_matmul_precision
 import numpy as np
 from dingo.gw.domains import build_domain
 from dingo.gw.noise.asd_dataset import ASDDataset
@@ -874,6 +875,13 @@ class DINGO_pipeline(Pipeline_Amortized):
         return pm, wfd
 
     def train(self,start_from_checkpoint = False, checkpoint_name="model_latest.pt",):
+        # This custom entry point bypasses Dingo's run_training(), which normally
+        # applies local.float32_matmul_precision. Apply it for new and resumed runs.
+        set_float32_matmul_precision(self.local_settings)
+        self.logger.info(
+            "$$$ float32 matmul precision: %s",
+            torch.get_float32_matmul_precision(),
+        )
         path = self.train_dir / 'history.txt'
         if not start_from_checkpoint:
             path = self.train_dir / "history.txt"
@@ -898,6 +906,10 @@ class DINGO_pipeline(Pipeline_Amortized):
         else:
             # THIS is where prepare_training() gets called.
             self.prepare_training()
+
+        # Keep the numerical setting with saved checkpoints, as Dingo's standard
+        # training entry point does.
+        self.model.metadata["float32_matmul_precision"] = torch.get_float32_matmul_precision()
             
         # self.model.stage_debug_hook = (
         #     self._stage_debug_hook
