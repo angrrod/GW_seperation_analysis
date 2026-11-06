@@ -5,7 +5,6 @@ import yaml
 from pathlib import Path
 import subprocess
 import os
-import hashlib
 from unittest.mock import patch
 import dingo.gw.training.train_pipeline as dingo_train_pipeline
 from dingo.gw.training.train_pipeline import (
@@ -13,6 +12,7 @@ from dingo.gw.training.train_pipeline import (
     train_stages,
 )
 from dingo.core.utils.torchutils import set_float32_matmul_precision
+from dingo.core.nn.nsf import FlowWrapper
 import numpy as np
 from dingo.gw.domains import build_domain
 from dingo.gw.noise.asd_dataset import ASDDataset
@@ -151,6 +151,23 @@ def add_derived_params_to_df(samples):
             samples[f"mass_ratio{suffix}"] = q
     return samples
 
+class FullModelContextAdapter(FlowWrapper):
+    """Pack context arguments for this checkout's full-model FlowWrapper.
+
+    The parent unpacks its first context argument before embedding. Preserve
+    the complete batch by supplying that argument as a tuple of tensors.
+    """
+
+    def log_prob(self, theta, *context):
+        return super().log_prob(theta, context)
+
+    def sample(self, *context, num_samples=1):
+        return super().sample(context, num_samples=num_samples)
+
+    def sample_and_log_prob(self, *context, num_samples=1):
+        return super().sample_and_log_prob(context, num_samples=num_samples)
+
+
 class DINGO_pipeline(Pipeline_Amortized):
     def __init__(self, logger, scenario:GWScenario, generateData:bool, nbr_cores:int = 1, train_full = False):
         super().__init__(logger, scenario)
@@ -159,10 +176,17 @@ class DINGO_pipeline(Pipeline_Amortized):
         
         # set up YML's so that scenario is correctly translated to bilby
         # self.pipeline_type = Pipeline_type.DINGO
-        self.train_dir = get_dingo_dir_data() / (
+        self.base_train_dir = get_dingo_dir_data() / (
             "training_full" if train_full else "training_copula"
         )
-        os.makedirs(self.train_dir, exist_ok=True)
+        # Separate histories and checkpoints for independent Slurm jobs. Set
+        # GW_RUN_ID to the original job number when loading or resuming a run.
+        run_id = os.environ.get("GW_RUN_ID") or os.environ.get("SLURM_JOB_ID")
+        self.train_dir = (
+            self.base_train_dir / f"job_{run_id}"
+            if run_id else self.base_train_dir
+        )
+        self.train_dir.mkdir(parents=True, exist_ok=True)
         self.waveform_settings = load_config("waveform_dataset_settings.yml")
         self.asd_settings = load_config("asd_dataset_settings.yml")
         if self.train_full:
@@ -550,188 +574,27 @@ class DINGO_pipeline(Pipeline_Amortized):
         return samples
 
     def _get_svd_cache_signature(self) -> str:
-        """
-        Build a hash describing the configuration on which the
-        embedding-network SVD basis depends.
-
-        If these settings change, the cached basis is not reused.
-        """
-
-        relevant_config = {
-            # Increment this manually if our caching implementation changes.
-            "cache_version": 1,
-
-            # Waveform family, frequency grid, priors, etc.
-            "waveform": self.waveform_settings,
-
-            # ASD / detector configuration.
-            "asd": self.asd_settings,
-
-            # Dingo data settings used when constructing the SVD.
-            "data": self.train_settings["data"],
-
-            # Requested SVD dimensions/settings.
-            "svd": (
-                self.train_settings
-                .get("model", {})
-                .get("embedding_kwargs", {})
-                .get("svd", {})
-            ),
-        }
-
-        serialized = yaml.safe_dump(
-            relevant_config,
-            sort_keys=True,
-        )
-
-        return hashlib.sha256(
-            serialized.encode("utf-8")
-        ).hexdigest()
+        from utils.embedding_svd import embedding_cache
+        return embedding_cache(self.train_settings).signature
 
     def _prepare_training_new_with_svd_cache(self):
-        """
-        Run Dingo's standard prepare_training_new(), but cache the
-        final V_rb_list returned by build_svd_for_embedding_network().
-
-        Dingo itself is not modified.
-
-        First compatible run:
-            Dingo builds SVD normally -> cache V_rb_list.
-
-        Later compatible run:
-            load cached V_rb_list -> skip expensive SVD construction.
-        """
-
-        cache_path = (
-            self.train_dir
-            / "embedding_svd_V_rb_cache.pt"
-        )
-
-        expected_signature = (
-            self._get_svd_cache_signature()
-        )
-
-        # This is Dingo's ORIGINAL implementation.
-        original_svd_builder = (
-            dingo_train_pipeline
-            .build_svd_for_embedding_network
-        )
-
-        def cached_svd_builder(*args, **kwargs):
-            """
-            Drop-in replacement used only while
-            prepare_training_new() is executing.
-            """
-
-            # ---------------------------------------------
-            # Try cached basis
-            # ---------------------------------------------
-
-            if cache_path.exists():
-                try:
-                    cache = torch.load(
-                        cache_path,
-                        map_location="cpu",
-                        weights_only=False,
-                    )
-
-                    cached_signature = cache.get(
-                        "signature"
-                    )
-
-                    if (
-                        cached_signature
-                        == expected_signature
-                    ):
-                        self.logger.info(
-                            "$$$ loading cached DINGO "
-                            f"embedding SVD from {cache_path}"
-                        )
-
-                        V_rb_list = cache[
-                            "V_rb_list"
-                        ]
-
-                        for i, V in enumerate(
-                            V_rb_list
-                        ):
-                            self.logger.info(
-                                "$$$ cached V_rb "
-                                f"[{i}] shape = "
-                                f"{getattr(V, 'shape', None)}"
-                            )
-
-                        return V_rb_list
-
-                    self.logger.info(
-                        "$$$ existing SVD cache is "
-                        "incompatible with current "
-                        "configuration; rebuilding."
-                    )
-
-                except Exception as exc:
-                    self.logger.warning(
-                        "$$$ could not load existing "
-                        "SVD cache; rebuilding. "
-                        f"Reason: {exc}"
-                    )
-
-            # ---------------------------------------------
-            # No valid cache -> use Dingo unchanged
-            # ---------------------------------------------
-
-            self.logger.info(
-                "$$$ building embedding SVD using "
-                "standard DINGO implementation"
-            )
-
-            V_rb_list = original_svd_builder(
-                *args,
-                **kwargs,
-            )
-
-            # ---------------------------------------------
-            # Store the EXACT result Dingo returns
-            # ---------------------------------------------
-
-            torch.save(
-                {
-                    "signature": expected_signature,
-                    "V_rb_list": V_rb_list,
-                },
-                cache_path,
-            )
-
-            self.logger.info(
-                "$$$ saved DINGO embedding SVD "
-                f"cache to {cache_path}"
-            )
-
-            return V_rb_list
-
-        # -------------------------------------------------
-        # Temporarily replace only the function used inside
-        # prepare_training_new().
-        #
-        # As soon as this `with` block exits, Dingo's
-        # original function is restored automatically.
-        # -------------------------------------------------
-
-        with patch.object(
-            dingo_train_pipeline,
-            "build_svd_for_embedding_network",
-            cached_svd_builder,
-        ):
-            pm, wfd = (
-                dingo_train_pipeline
-                .prepare_training_new(
-                    train_settings=self.train_settings,
-                    train_dir=str(self.train_dir),
-                    local_settings=self.local_settings,
-                )
-            )
-
-        return pm, wfd
+        """GPU training only loads a completed CPU-prepared embedding cache."""
+        from utils.embedding_svd import embedding_cache
+        svd = self.train_settings.get("model", {}).get("embedding_kwargs", {}).get("svd")
+        if not svd or svd.get("no_init", False):
+            return dingo_train_pipeline.prepare_training_new(
+                train_settings=self.train_settings, train_dir=str(self.train_dir),
+                local_settings=self.local_settings)
+        cache = embedding_cache(self.train_settings)
+        # Check before loading the waveform bank or constructing the network.
+        # The closure owns these arrays only until network initialization ends.
+        matrices = cache.load_ready()
+        self.logger.info(f"$$$ loading prepared embedding SVD: {cache.directory}")
+        with patch.object(dingo_train_pipeline, "build_svd_for_embedding_network",
+                          lambda *args, **kwargs: matrices):
+            return dingo_train_pipeline.prepare_training_new(
+                train_settings=self.train_settings, train_dir=str(self.train_dir),
+                local_settings=self.local_settings)
 
     def generate_waveform_dataset(self):
 
@@ -847,6 +710,24 @@ class DINGO_pipeline(Pipeline_Amortized):
         # if not self.artifact_paths["asd_dataset"].exists():
         self.generate_asd_dataset()
 
+    def _adapt_full_model(self):
+        """Reuse the full model's modules and checkpoint keys in the adapter."""
+        if not self.train_full:
+            return
+
+        network = self.model.network
+        if isinstance(network, FullModelContextAdapter):
+            return
+        if not isinstance(network, FlowWrapper) or network.embedding_net is None:
+            raise TypeError(
+                "Full-model context adaptation requires a FlowWrapper "
+                "with an embedding network."
+            )
+
+        adapted = FullModelContextAdapter(network.flow, network.embedding_net)
+        adapted.train(network.training)
+        self.model.network = adapted
+
     def prepare_training(self):
         """
         Prepare a new Dingo training run.
@@ -859,6 +740,7 @@ class DINGO_pipeline(Pipeline_Amortized):
             self.model is not None
             and self.waveform_dataset is not None
         ):
+            self._adapt_full_model()
             return (
                 self.model,
                 self.waveform_dataset,
@@ -869,6 +751,7 @@ class DINGO_pipeline(Pipeline_Amortized):
         )
 
         self.model = pm
+        self._adapt_full_model()
         self.waveform_dataset = wfd
         self.wfd = wfd
 
@@ -901,7 +784,7 @@ class DINGO_pipeline(Pipeline_Amortized):
                     train_dir=str(self.train_dir),
                 )
             )
-
+            self._adapt_full_model()
 
         else:
             # THIS is where prepare_training() gets called.
@@ -976,6 +859,7 @@ class DINGO_pipeline(Pipeline_Amortized):
                 model_filename     = str(latest_model_path),
                 load_training_info = False,
             )
+        self._adapt_full_model()
         self.logger.info(f"$$$ loaded DINGO vector_copula_Model: {latest_model_path}")
         return self.model
 

@@ -7,7 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=36
 
-#SBATCH --time=48:00:00
+#SBATCH --time=71:00:00
 #SBATCH --output=HPC_output_logs/TestJob_%j.out
 #SBATCH --error=HPC_output_logs/TestJob_%j.err
 
@@ -22,7 +22,7 @@ conda activate "$VSC_DATA/GW_separation/GW_env"
 
 #lower than cpu per tasks
 export GW_INP_DIR="$VSC_DATA/GW_separation"
-export GW_DATA_DIR="$VSC_SCRATCH/GW_separation/data"
+# Dataset paths are resolved for the allocated cluster by utils/paths.py.
 
 cd "$VSC_DATA/GW_separation"
 
@@ -44,4 +44,4 @@ export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
 cd "$VSC_DATA/GW_separation"
 
 # Run the Python script using srun and pass the parameters explicitly
-srun python "$PROJECT_DIR/scripts/generate_dingo_data.py" 
+srun python -u "$PROJECT_DIR/scripts/generate_dingo_data.py" 

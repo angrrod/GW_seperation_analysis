@@ -60,7 +60,9 @@ extrinsic_prior:
   psi_B: 0.0
   phase_B: 0.0
   delta_t_AB: 0.0
-num_samples: 200000
+num_samples: 6000000
+generation:
+  chunk_size: 100000
 compression:
   svd:
     size: 1000
